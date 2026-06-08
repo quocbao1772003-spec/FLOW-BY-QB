@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { createNode, mediaUrl, patchNode, runAssistant } from "../api/client";
+import { autoPrompt, autoPromptBatch, createNode, mediaUrl, patchNode, runAssistant } from "../api/client";
 import {
   IconCaretDown,
   IconCopy,
@@ -70,17 +70,41 @@ const DUP_STRIP = new Set([
 // whether to wait for completion).
 async function runSingleNode(n: FlowNode): Promise<boolean> {
   const t = n.data.type;
-  const prompt = (n.data.prompt ?? "").trim();
-  if (!prompt) return false;
+  let prompt = (n.data.prompt ?? "").trim();
   if (t === "image") {
+    const variantCount = Math.max(1, Math.min(n.data.variantCount ?? 1, 4));
+    let prompts: string[] | undefined;
+    // Empty prompt → auto-synthesise from upstream refs (no popup), same
+    // as the node's footer ▶ run.
+    if (!prompt) {
+      const dbId = parseInt(n.id, 10);
+      if (isNaN(dbId)) return false;
+      useBoardStore.getState().updateNodeData(n.id, { autoPromptStatus: "pending" });
+      try {
+        if (variantCount > 1) {
+          const res = await autoPromptBatch(dbId, variantCount);
+          prompts = res.prompts;
+          prompt = res.prompts[0] ?? "";
+        } else {
+          const res = await autoPrompt(dbId);
+          prompt = res.prompt;
+        }
+        useBoardStore.getState().updateNodeData(n.id, { prompt, autoPromptStatus: undefined });
+      } catch {
+        useBoardStore.getState().updateNodeData(n.id, { autoPromptStatus: "failed" });
+        return false;
+      }
+    }
     await useGenerationStore.getState().dispatchGeneration(n.id, {
       prompt,
       kind: "image",
       aspectRatio: n.data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE",
-      variantCount: n.data.variantCount,
+      variantCount,
+      prompts,
     });
     return true;
   }
+  if (!prompt) return false;
   if (t === "video") {
     // Source = the upstream node's freshly generated variants (the
     // pipeline runner guarantees upstream finished before we get here).

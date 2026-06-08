@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
+import { autoPrompt, autoPromptBatch, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
 import {
@@ -1318,6 +1318,39 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
             Refine
           </button>
         )}
+        {!isProcessing && (
+          // Replace — swap the uploaded image in place (same affordance
+          // as the Image node). Pins to the media area's bottom-left.
+          <button
+            type="button"
+            className="image-replace-btn nodrag"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            disabled={uploading}
+            style={{
+              position: "absolute",
+              bottom: 10,
+              left: 10,
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background: "rgba(16, 16, 16, 0.85)",
+              color: "#f5f5f5",
+              border: "1px solid rgba(255, 255, 255, 0.15)",
+              borderRadius: 8,
+              fontSize: 12,
+              cursor: uploading ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <IconReplace size={12} /> {uploading ? "Uploading…" : "Replace"}
+          </button>
+        )}
       </div>
       <BriefHint data={data} />
       {!isProcessing && (
@@ -1377,6 +1410,20 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
           />
         </div>
       )}
+      {/* Hidden file input for the in-place Replace button (the empty-state
+          input is unmounted once media exists, so this branch needs its
+          own). */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) uploadOwn(f);
+          e.target.value = "";
+        }}
+      />
       {error && <p className="visual-asset__error">{error}</p>}
     </div>
   );
@@ -1785,19 +1832,53 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   // to the dialog when there's no prompt yet (nothing to dispatch), or
   // for Storyboard / video nodes whose dispatch needs the dialog's extra
   // wiring (composite templates, source-variant selection).
-  function handleRunNow(e: React.MouseEvent) {
+  async function handleRunNow(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy || isRunning) return;
-    const p = (data.prompt ?? "").trim();
-    if (!p || data.type !== "image") {
+    // Image nodes always dispatch directly — no popup. If the prompt is
+    // empty, auto-synthesise one from upstream refs first (same backend
+    // the dialog used), then generate.
+    if (data.type !== "image") {
       handleGenerate(e);
       return;
     }
-    void useGenerationStore.getState().dispatchGeneration(props.id, {
-      prompt: p,
+    const gen = useGenerationStore.getState();
+    const aspectRatio = data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE";
+    let prompt = (data.prompt ?? "").trim();
+    let prompts: string[] | undefined;
+
+    if (!prompt) {
+      const dbId = parseInt(props.id, 10);
+      if (isNaN(dbId)) return;
+      useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
+      try {
+        if (variantCount > 1) {
+          const res = await autoPromptBatch(dbId, variantCount);
+          prompts = res.prompts;
+          prompt = res.prompts[0] ?? "";
+        } else {
+          const res = await autoPrompt(dbId);
+          prompt = res.prompt;
+        }
+        useBoardStore.getState().updateNodeData(props.id, {
+          prompt,
+          autoPromptStatus: undefined,
+        });
+      } catch (err) {
+        useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "failed" });
+        useGenerationStore.setState({
+          error: err instanceof Error ? `Auto-prompt failed: ${err.message}` : "Auto-prompt failed",
+        });
+        return;
+      }
+    }
+
+    void gen.dispatchGeneration(props.id, {
+      prompt,
       kind: "image",
-      aspectRatio: data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE",
+      aspectRatio,
       variantCount,
+      prompts,
     });
   }
 

@@ -338,6 +338,10 @@ export function ImageEditModal({ rfId, mediaId, onClose, initialTool }: Props) {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
+                // Keep all typing (incl. Space / arrows) inside the field —
+                // stop it reaching document-level handlers like the
+                // ResultViewer's variant navigation that ate the spaces.
+                e.stopPropagation();
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                   e.preventDefault();
                   void handlePromptRun();

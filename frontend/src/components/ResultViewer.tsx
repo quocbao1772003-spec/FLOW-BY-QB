@@ -240,6 +240,22 @@ export function ResultViewer() {
   useEffect(() => {
     if (rfId === null) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      // Don't hijack keys while the user is typing in a field (e.g. the
+      // AI-edit prompt in the Image Editor that opens over this viewer) —
+      // Space/arrows belong to the input, not variant navigation.
+      const t = e.target as HTMLElement | null;
+      const typing =
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable);
+      if (typing) {
+        // Still allow Esc to close even from a field.
+        if (e.key === "Escape") {
+          // Let the field/editor handle its own Esc first; do nothing here.
+        }
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         closeResultViewer();
