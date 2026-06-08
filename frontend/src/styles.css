@@ -2117,6 +2117,23 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Download menu items in the image node floating toolbar */
+.image-node-toolbar__menu-item {
+  padding: 7px 14px;
+  border-radius: 7px;
+  background: none;
+  border: none;
+  color: var(--fg-1, #e3e3e3);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.image-node-toolbar__menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg-0, #f5f5f5);
+}
+
 /* Edge cut button — scissors at the selected edge's midpoint */
 .edge-cut-btn {
   position: absolute;

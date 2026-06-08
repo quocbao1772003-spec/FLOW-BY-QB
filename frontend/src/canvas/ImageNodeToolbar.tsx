@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 import { useBoardStore } from "../store/board";
-import { mediaUrl } from "../api/client";
+import { mediaUrl, upscaleImage } from "../api/client";
+import { useGenerationStore } from "../store/generation";
 import { FullscreenImageViewer } from "../components/FullscreenImageViewer";
 import { RunSplitButton } from "./SelectionToolbar";
+import { IconSpinner } from "./icons";
 
 /**
  * Magnific-style floating toolbar for Image / Image-Generator nodes.
@@ -61,20 +63,30 @@ export function ImageNodeToolbar({
     void deleteNodeByRfId(rfId);
   }, [rfId, deleteNodeByRfId]);
 
-  const handleDownload = useCallback(() => {
-    if (!node?.data) return;
-    const data = node.data as Record<string, unknown>;
-    const mediaIds =
-      (data.mediaIds as string[] | undefined) ||
-      (typeof data.mediaId === "string" ? [data.mediaId] : []);
-    const ids = mediaIds.filter(
-      (m): m is string => typeof m === "string" && m.length > 0,
-    );
-    if (ids.length === 0) return;
+  const [dlOpen, setDlOpen] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
+
+  function nameParts() {
+    const data = (node?.data ?? {}) as Record<string, unknown>;
     const title =
       (typeof data.title === "string" && data.title) || (data.type as string);
-    const safe = title.replace(/[^A-Za-z0-9_-]+/g, "_");
-    const shortId = (data.shortId as string) || rfId;
+    return {
+      safe: title.replace(/[^A-Za-z0-9_-]+/g, "_"),
+      shortId: (data.shortId as string) || rfId,
+    };
+  }
+
+  // 1K = download every rendered variant as-is.
+  const handleDownload1K = useCallback(() => {
+    setDlOpen(false);
+    if (!node?.data) return;
+    const data = node.data as Record<string, unknown>;
+    const ids = (
+      (data.mediaIds as string[] | undefined) ||
+      (typeof data.mediaId === "string" ? [data.mediaId] : [])
+    ).filter((m): m is string => typeof m === "string" && m.length > 0);
+    if (ids.length === 0) return;
+    const { safe, shortId } = nameParts();
     const ext = data.type === "video" ? "mp4" : "png";
     ids.forEach((mid, i) => {
       const a = document.createElement("a");
@@ -86,6 +98,37 @@ export function ImageNodeToolbar({
       a.remove();
     });
   }, [rfId, node]);
+
+  // 2K = upscale the active variant via Flow, then download the bytes.
+  const handleDownload2K = useCallback(async () => {
+    setDlOpen(false);
+    if (!activeMediaId || upscaling) return;
+    const projectId = await useGenerationStore.getState().ensureProjectId();
+    if (!projectId) {
+      useGenerationStore.setState({ error: "Flow project chưa sẵn sàng." });
+      return;
+    }
+    setUpscaling(true);
+    try {
+      const blob = await upscaleImage(activeMediaId, projectId, "2K");
+      const { safe, shortId } = nameParts();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe}-${shortId}-2K.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      useGenerationStore.setState({
+        error:
+          err instanceof Error ? `Upscale 2K thất bại: ${err.message}` : "Upscale 2K thất bại",
+      });
+    } finally {
+      setUpscaling(false);
+    }
+  }, [activeMediaId, upscaling, rfId, node]);
 
   return (
     <>
@@ -138,13 +181,49 @@ export function ImageNodeToolbar({
       >
         <SvgTrash />
       </ToolbarButton>
-      <ToolbarButton
-        title="Download"
-        disabled={!hasMedia}
-        onClick={handleDownload}
-      >
-        <SvgDownload />
-      </ToolbarButton>
+      <span style={{ position: "relative", display: "inline-flex" }}>
+        <ToolbarButton
+          title="Download (1K / 2K)"
+          disabled={!hasMedia || upscaling}
+          onClick={() => setDlOpen((o) => !o)}
+        >
+          {upscaling ? <IconSpinner size={13} /> : <SvgDownload />}
+        </ToolbarButton>
+        {dlOpen && !upscaling && (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              right: 0,
+              background: "var(--surface-1, #1a1a1a)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 10,
+              padding: 5,
+              boxShadow: "0 10px 28px rgba(0,0,0,0.5)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              whiteSpace: "nowrap",
+              zIndex: 6,
+            }}
+          >
+            <button
+              type="button"
+              className="image-node-toolbar__menu-item"
+              onClick={handleDownload1K}
+            >
+              Tải 1K (gốc)
+            </button>
+            <button
+              type="button"
+              className="image-node-toolbar__menu-item"
+              onClick={() => void handleDownload2K()}
+            >
+              Tải 2K (nâng cấp · ~10s)
+            </button>
+          </div>
+        )}
+      </span>
     </div>
     </>
   );
