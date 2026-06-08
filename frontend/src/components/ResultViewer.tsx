@@ -2,17 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { useGenerationStore } from "../store/generation";
 import { useBoardStore } from "../store/board";
 import { useSettingsStore } from "../store/settings";
-import { useReferencesStore } from "../store/references";
 import { getMediaStatus, mediaUrl, type MediaStatus } from "../api/client";
+import { ImageEditModal } from "./ImageEditModal";
 import { countryLabel, vibeLabel } from "../constants/character";
-
-const ICON: Record<string, string> = {
-  character: "◎",
-  image: "▣",
-  video: "▶",
-  prompt: "✦",
-  note: "✎",
-};
+import {
+  NodeTypeIcon,
+  IconSparkles,
+  IconCrop,
+  IconDownload,
+  IconRefresh,
+} from "../canvas/icons";
 
 // Friendly labels for the metadata grid's `model` row. Keys match what
 // the dispatch code stamps onto node.data — keep in sync with
@@ -77,7 +76,6 @@ export function ResultViewer() {
   const closeResultViewer = useGenerationStore((s) => s.closeResultViewer);
   const openGenerationDialog = useGenerationStore((s) => s.openGenerationDialog);
   const dispatchGeneration = useGenerationStore((s) => s.dispatchGeneration);
-  const projectId = useGenerationStore((s) => s.projectId);
   const nodes = useBoardStore((s) => s.nodes);
   const edges = useBoardStore((s) => s.edges);
   const settingsImageModel = useSettingsStore((s) => s.imageModel);
@@ -86,12 +84,20 @@ export function ResultViewer() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [mediaReady, setMediaReady] = useState(false);
   const [cacheKey, setCacheKey] = useState(0);
+  // Image zoom/pan — wheel to zoom (1×–6×), drag to pan when zoomed,
+  // double-click resets. Reset whenever the displayed media changes.
+  const [imgZoom, setImgZoom] = useState(1);
+  const [imgPan, setImgPan] = useState({ x: 0, y: 0 });
+  const imgDragRef = useRef<{
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
   const [status, setStatus] = useState<MediaStatus | null>(null);
-  // Save-to-library state. MUST live above the `if (!data) return null`
-  // early-return below — React's Rules of Hooks require all hooks to be
-  // called unconditionally on every render in the same order.
-  const [savedFlash, setSavedFlash] = useState(false);
-  const [saving, setSaving] = useState(false);
+  // Image editor (AI edit / Crop & Flip) — opens the full ImageEditModal
+  // over the viewer with the chosen tool tab.
+  const [editorTool, setEditorTool] = useState<null | "prompt" | "crop">(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -192,6 +198,12 @@ export function ResultViewer() {
         : (data.mediaId ?? null))
     : null;
   const slotError = data?.slotErrors?.[activeIdx] ?? null;
+
+  // Reset zoom/pan whenever the displayed media changes.
+  useEffect(() => {
+    setImgZoom(1);
+    setImgPan({ x: 0, y: 0 });
+  }, [currentMediaId, activeIdx, rfId]);
 
   // Reset active variant index and media state when viewer opens for a different node
   useEffect(() => {
@@ -392,57 +404,21 @@ export function ResultViewer() {
     openGenerationDialog(rfId, data.prompt ?? "");
   }
 
-  async function handleNewVariant() {
-    if (!rfId || llmBusy) return;
-    const newRfId = await useBoardStore
-      .getState()
-      .cloneNodeWithUpstream(rfId);
-    if (!newRfId) return;
-    closeResultViewer();
-    // Open the gen dialog on the fresh sibling so the user can hit
-    // Generate immediately (or tweak prompt first) — that's the natural
-    // next step after cloning.
-    openGenerationDialog(newRfId, data?.prompt ?? "");
-  }
-
-  // Save the currently-viewed variant to the cross-board Reference
-  // library. Backend POST is idempotent on media_id, so multi-clicking
-  // is safe — we still flip the button to "Saved" for 1.5s for feedback.
-  // (State declared at the top of the component to satisfy Rules of Hooks.)
-
-  async function handleSaveToLibrary() {
-    if (!rfId || !data || !currentMediaId || saving) return;
-    setSaving(true);
-    try {
-      const kind: "image" | "character" | "visual_asset" | "storyboard_shot" =
-        data.type === "Storyboard"
-          ? "storyboard_shot"
-          : data.type === "character"
-            ? "character"
-            : data.type === "visual_asset"
-              ? "visual_asset"
-              : "image";
-      await useReferencesStore.getState().save({
-        media_id: currentMediaId,
-        kind,
-        ai_brief: typeof data.aiBrief === "string" ? data.aiBrief : null,
-        aspect_ratio:
-          typeof data.aspectRatio === "string" ? data.aspectRatio : null,
-        label:
-          typeof data.aiBrief === "string"
-            ? data.aiBrief.slice(0, 80)
-            : `#${data.shortId}`,
-        source_board_id: useBoardStore.getState().boardId,
-        source_node_short_id:
-          typeof data.shortId === "string" ? data.shortId : null,
-      });
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1500);
-    } catch {
-      // Surfaced via store.error
-    } finally {
-      setSaving(false);
-    }
+  // Download the currently displayed variant. Same-origin /media/<id>
+  // URL honours the `download` filename.
+  function handleDownload() {
+    if (!data || !currentMediaId) return;
+    const safeTitle = ((data.title as string) || data.type).replace(
+      /[^A-Za-z0-9_-]+/g,
+      "_",
+    );
+    const ext = data.type === "video" ? "mp4" : "png";
+    const a = document.createElement("a");
+    a.href = mediaUrl(currentMediaId);
+    a.download = `${safeTitle}-${data.shortId}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   return (
@@ -466,6 +442,50 @@ export function ResultViewer() {
             className="media-placeholder"
             role={mediaReady ? undefined : "img"}
             aria-label={mediaReady ? undefined : `${data.title} — media pending`}
+            // Wheel-zoom + drag-pan for images. Video keeps native controls.
+            onWheel={(e) => {
+              if (isVideo || !mediaReady) return;
+              e.preventDefault();
+              const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+              setImgZoom((z) => {
+                const next = Math.min(6, Math.max(1, z * factor));
+                if (next === 1) setImgPan({ x: 0, y: 0 });
+                return next;
+              });
+            }}
+            onMouseDown={(e) => {
+              if (isVideo || imgZoom <= 1) return;
+              e.preventDefault();
+              imgDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                panX: imgPan.x,
+                panY: imgPan.y,
+              };
+            }}
+            onMouseMove={(e) => {
+              const st = imgDragRef.current;
+              if (!st) return;
+              setImgPan({
+                x: st.panX + (e.clientX - st.startX),
+                y: st.panY + (e.clientY - st.startY),
+              });
+            }}
+            onMouseUp={() => {
+              imgDragRef.current = null;
+            }}
+            onMouseLeave={() => {
+              imgDragRef.current = null;
+            }}
+            onDoubleClick={() => {
+              setImgZoom(1);
+              setImgPan({ x: 0, y: 0 });
+            }}
+            style={
+              !isVideo && imgZoom > 1
+                ? { cursor: imgDragRef.current ? "grabbing" : "grab", overflow: "hidden" }
+                : undefined
+            }
           >
             {currentMediaId ? (
               <>
@@ -484,17 +504,49 @@ export function ResultViewer() {
                 ) : (
                   <img
                     className="media-placeholder__img"
-                    style={mediaReady ? undefined : { display: "none" }}
+                    style={{
+                      ...(mediaReady ? {} : { display: "none" }),
+                      transform: `translate(${imgPan.x}px, ${imgPan.y}px) scale(${imgZoom})`,
+                      transition: imgDragRef.current ? "none" : "transform 80ms ease",
+                    }}
                     src={mediaUrl(currentMediaId) + cacheBust}
                     alt={data.title as string}
                     onError={onImgError}
                     onLoad={onImgLoad}
+                    draggable={false}
                   />
+                )}
+                {/* Zoom indicator + reset — only when zoomed in */}
+                {!isVideo && imgZoom > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImgZoom(1);
+                      setImgPan({ x: 0, y: 0 });
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      right: 10,
+                      zIndex: 3,
+                      padding: "4px 10px",
+                      borderRadius: 8,
+                      background: "rgba(16, 16, 16, 0.8)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      color: "#f5f5f5",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                    title="Reset zoom (double-click)"
+                  >
+                    {Math.round(imgZoom * 100)}% ↺
+                  </button>
                 )}
                 {!mediaReady && (
                   <div className="media-placeholder__content">
                     <span className="media-placeholder__icon" aria-hidden="true">
-                      {ICON[data.type] ?? "□"}
+                      <NodeTypeIcon type={data.type} size={14} />
                     </span>
                     <span className="media-placeholder__title">{data.title}</span>
                     <span className="media-placeholder__id">media_id: {shortMediaId}</span>
@@ -520,7 +572,7 @@ export function ResultViewer() {
             ) : (
               <div className="media-placeholder__content">
                 <span className="media-placeholder__icon" aria-hidden="true">
-                  {ICON[data.type] ?? "□"}
+                  <NodeTypeIcon type={data.type} size={14} />
                 </span>
                 <span className="media-placeholder__title">{data.title}</span>
                 <span className="media-placeholder__id">media_id: {shortMediaId}</span>
@@ -669,54 +721,37 @@ export function ResultViewer() {
               </div>
             )}
             <button
-              className="result-viewer__btn result-viewer__btn--primary"
-              onClick={handleRegenerate}
-              disabled={llmBusy}
-              title={llmBusy ? "Backend is busy on this node — try again in a moment" : undefined}
+              className="result-viewer__btn"
+              onClick={() => setEditorTool("prompt")}
+              disabled={!currentMediaId || isVideo}
+              title={isVideo ? "Image editing only" : "Edit this image with an AI prompt"}
             >
-              Regenerate ⌘R
+              <IconSparkles size={13} /> AI edit
             </button>
             <button
               className="result-viewer__btn"
-              onClick={handleNewVariant}
-              disabled={llmBusy}
-              title={
-                llmBusy
-                  ? "Backend is busy on this node — try again in a moment"
-                  : "Clone this node onto the canvas with the same upstream refs"
-              }
+              onClick={() => setEditorTool("crop")}
+              disabled={!currentMediaId || isVideo}
+              title={isVideo ? "Image editing only" : "Crop & flip this image"}
             >
-              New variant +
+              <IconCrop size={13} /> Crop & Flip
             </button>
             <button
-              className={
-                "result-viewer__btn result-viewer__btn--save"
-                + (savedFlash ? " result-viewer__btn--saved" : "")
-              }
-              onClick={handleSaveToLibrary}
-              disabled={!currentMediaId || saving}
-              title={
-                !currentMediaId
-                  ? "Wait for the generation to finish"
-                  : "Save this variant to the cross-board Reference library"
-              }
+              className="result-viewer__btn"
+              onClick={handleDownload}
+              disabled={!currentMediaId}
+              title="Download this variant"
             >
-              {savedFlash ? "★ Saved" : saving ? "…" : "★ Save to library"}
+              <IconDownload size={13} /> Download
             </button>
-            {projectId ? (
-              <a
-                className="result-viewer__btn result-viewer__btn--link"
-                href={`https://labs.google/fx/tools/flow/project/${projectId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open in Flow ↗
-              </a>
-            ) : (
-              <button className="result-viewer__btn" disabled>
-                Open in Flow ↗
-              </button>
-            )}
+            <button
+              className="result-viewer__btn"
+              onClick={handleRegenerate}
+              disabled={llmBusy}
+              title={llmBusy ? "Backend is busy on this node — try again in a moment" : "Generate this image again"}
+            >
+              <IconRefresh size={13} /> Re-generate
+            </button>
           </div>
         </div>
 
@@ -734,6 +769,16 @@ export function ResultViewer() {
           ×
         </button>
       </div>
+
+      {/* Full-screen image editor — opened by AI edit / Crop & Flip */}
+      {editorTool && rfId && currentMediaId && (
+        <ImageEditModal
+          rfId={rfId}
+          mediaId={currentMediaId}
+          initialTool={editorTool}
+          onClose={() => setEditorTool(null)}
+        />
+      )}
     </div>
   );
 }

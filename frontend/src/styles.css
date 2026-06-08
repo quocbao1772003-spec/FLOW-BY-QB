@@ -1,16 +1,55 @@
 :root {
   color-scheme: dark;
-  --bg: #0b0c10;
-  --panel: #14161c;
-  --panel-high: #1c1f27;
-  --panel-higher: #232630;
-  --border: #22252d;
-  --text: #e6e8ec;
-  --muted: #8a8f99;
-  --accent: #7c5cff;
-  --success: #6ee7b7;
-  --warn: #f5b301;
-  --error: #ef4444;
+  /* ── Design tokens (ui/design_system.md) ────────────────────────────
+     Surface scale: near-black bg ascending to light text. Legacy var
+     names (--bg/--panel/…) are kept as aliases so the whole existing
+     stylesheet picks the new system up without a rename sweep. */
+  --surface-0: #101010;
+  --surface-1: #1a1a1a;
+  --surface-2: #2b2b2b;
+  --surface-3: #353535;
+  --surface-4: #424242;
+  --surface-modal: #141414;
+  --fg-0: #f5f5f5;
+  --fg-1: #e3e3e3;
+  --fg-2: #c5c5c5;
+  --fg-3: #aaaaaa;
+  --fg-4: #737373;
+  --border-alpha-0: rgba(255, 255, 255, 0.05);
+  --border-alpha-1: rgba(255, 255, 255, 0.1);
+  --border-alpha-2: rgba(255, 255, 255, 0.2);
+
+  /* Brand accent (user choice: blue) */
+  --accent-0: #3b82f6;
+  --accent-1: #2f6fe0;
+  --accent-2: #2459ba;
+  --accent-tint: rgba(59, 130, 246, 0.1);
+
+  /* Radius scale */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-base: 8px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Layout */
+  --container-padding: 1.5rem;
+
+  /* Canvas */
+  --edge-path: #b1b1b7;
+
+  /* Legacy aliases — everything below maps old names onto the tokens. */
+  --bg: var(--surface-0);
+  --panel: var(--surface-1);
+  --panel-high: var(--surface-2);
+  --panel-higher: var(--surface-3);
+  --border: var(--border-alpha-1);
+  --text: var(--fg-0);
+  --muted: var(--fg-3);
+  --accent: var(--accent-0);
+  --success: #60dbb0;
+  --warn: #edbd44;
+  --error: #f66950;
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────── */
@@ -26,7 +65,7 @@ body,
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  font-family: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 button {
@@ -1074,16 +1113,25 @@ button:disabled {
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
 
+/* TopBar — 60px, transparent, sits over the canvas (spec §2.1). */
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 48px;
-  padding: 0 16px;
-  background: var(--panel);
-  box-shadow: inset 0 -1px 0 var(--border);
+  gap: 4px;
+  height: 60px;
+  padding: 0 var(--container-padding, 24px);
+  background: transparent;
   flex-shrink: 0;
   z-index: 20;
+}
+
+.toolbar-crumb {
+  font-size: 12px;
+  color: var(--fg-3);
+  padding: 4px 8px;
+  border-radius: var(--radius-base);
+  cursor: default;
+  white-space: nowrap;
 }
 
 .toolbar-wordmark {
@@ -1195,30 +1243,1215 @@ button:disabled {
   color: var(--text);
 }
 
-/* ── Node Card ───────────────────────────────────────────────────────────── */
+/* ── Node Card (Magnific-style) ──────────────────────────────────────────
+   Layout: .node-shell wraps an "eyebrow" type-label floating above the
+   card and the card surface itself. Generator nodes (image/video/
+   storyboard) add a chip footer + circular run button. */
+
+.node-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.node-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.node-eyebrow .node-icon {
+  font-size: 11px;
+  opacity: 0.9;
+  display: inline-flex;
+  align-items: center;
+}
+
+.node-eyebrow .node-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
 
 .node-card {
   position: relative;
   width: 240px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+  border-radius: var(--radius-lg);
   padding: 12px 12px 12px 18px;
   color: var(--text);
-  transition: transform 80ms ease, box-shadow 80ms ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .node-card:hover {
-  transform: translateY(-1px);
+  border-color: var(--border-alpha-2);
+  box-shadow: 0 2px 10px -3px rgba(0, 0, 0, 0.6);
 }
 
 .node-card--selected {
-  outline: 2px solid rgba(124, 92, 255, 0.8);
-  outline-offset: 1px;
+  border-color: #3b82f6;
+  box-shadow:
+    0 0 0 1px #3b82f6,
+    0 0 18px rgba(59, 130, 246, 0.25);
 }
 
 .node-card--note {
   border-style: dashed;
+}
+
+/* Generator nodes (image / storyboard / video) — bigger Magnific-style
+   surface with room for the chip footer. */
+.node-card--generator {
+  width: 320px;
+  border-radius: 20px;
+  padding: 14px 14px 12px 18px;
+}
+
+/* Prompt preview line — Magnific shows the prompt (or placeholder)
+   inside the card just above the chip row. Click opens the gen dialog. */
+.node-genprompt {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  opacity: 0.85;
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.node-genprompt--empty {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.node-genprompt:hover {
+  opacity: 1;
+}
+
+/* In-place prompt editor (swaps in for .node-genprompt on click).
+   Used as the MentionAutocomplete WRAPPER class — the component draws
+   its own background/border/padding on the textarea+mirror pair, so the
+   wrapper must stay padding-less or the overlay desyncs from the text. */
+.node-genprompt-editor {
+  margin-top: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+}
+
+/* Chip rendered as a real <select> — keep the pill look */
+.node-chip--select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  outline: none;
+  padding-right: 18px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%23888' stroke-width='1.4' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+}
+
+.node-chip--select:hover {
+  color: var(--text);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.node-chip--select option {
+  background: #1c1c20;
+  color: var(--text);
+}
+
+/* Anchor for the absolute-positioned Replace button so it pins to the
+   image area's bottom-left instead of the card's (where it would cover
+   the chip footer). */
+.node-body--image {
+  position: relative;
+}
+
+/* ── Left toolbar (Magnific-style, spec §2.3 / §4) ──────────────────── */
+
+.left-toolbar {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.left-toolbar__btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-base);
+  font-size: 16px;
+  color: var(--fg-3);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.left-toolbar__btn:hover:not([disabled]) {
+  color: var(--fg-0);
+  background: var(--border-alpha-1);
+}
+
+.left-toolbar__btn--active {
+  color: var(--fg-0);
+  background: var(--surface-2);
+}
+
+.left-toolbar__btn[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.left-toolbar__sep {
+  width: 18px;
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border-alpha-1);
+}
+
+.left-toolbar__menu {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  z-index: 31;
+}
+
+.left-toolbar__menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.left-toolbar__menu button:hover {
+  background: var(--border-alpha-1);
+  color: var(--fg-0);
+}
+
+/* ── Footer controls (spec §2.8 / §6) ───────────────────────────────── */
+
+.footer-controls {
+  position: absolute;
+  bottom: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.footer-controls--left {
+  left: 12px;
+  max-width: 50%;
+  overflow-x: auto;
+}
+
+.footer-controls--right {
+  right: 12px;
+}
+
+.footer-tab {
+  padding: 5px 12px;
+  border-radius: var(--radius-base);
+  font-size: 12px;
+  color: var(--fg-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.footer-tab:hover {
+  color: var(--fg-0);
+  background: var(--border-alpha-1);
+}
+
+.footer-tab--active {
+  color: var(--fg-0);
+  background: var(--surface-2);
+}
+
+.footer-tab--add {
+  font-size: 14px;
+  padding: 5px 9px;
+}
+
+.footer-btn {
+  min-width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: var(--radius-base);
+  font-size: 12px;
+  color: var(--fg-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.footer-btn:hover {
+  color: var(--fg-0);
+  background: var(--border-alpha-1);
+}
+
+.footer-btn--active {
+  color: var(--fg-0);
+  background: var(--surface-2);
+}
+
+.footer-btn--zoom {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-0);
+}
+
+.footer-zoom-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.footer-zoom-menu button {
+  padding: 5px 14px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.footer-zoom-menu button:hover {
+  background: var(--border-alpha-1);
+  color: var(--fg-0);
+}
+
+/* MiniMap restyle to tokens; nudge above the footer pill. */
+.react-flow__minimap {
+  bottom: 56px !important;
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── App sidebar (Magnific-style nav) ───────────────────────────────── */
+
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 200px;
+  background: var(--surface-0);
+  border-right: 1px solid var(--border-alpha-0);
+  padding: 14px 10px;
+  gap: 4px;
+  transition: width 120ms ease;
+}
+
+.app-sidebar--collapsed {
+  width: 56px;
+  padding: 14px 8px;
+}
+
+.app-sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-bottom: 14px;
+}
+
+.app-sidebar--collapsed .app-sidebar__top {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app-sidebar__brand {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg-0);
+  text-align: left;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.app-sidebar__toggle {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--fg-4);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.app-sidebar__toggle:hover {
+  color: var(--fg-0);
+  background: var(--border-alpha-0);
+}
+
+.app-sidebar--collapsed .app-sidebar__item {
+  justify-content: center;
+  padding: 9px 0;
+}
+
+.app-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-base);
+  font-size: 13px;
+  color: var(--fg-3);
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.app-sidebar__item:hover {
+  color: var(--fg-0);
+  background: var(--border-alpha-0);
+}
+
+.app-sidebar__item--active {
+  color: var(--fg-0);
+  background: var(--surface-1);
+}
+
+.app-sidebar__icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.9;
+}
+
+.app-sidebar__bottom {
+  margin-top: auto;
+}
+
+/* ── Generic page scaffold (Flows / Image Gen / Library) ────────────── */
+
+.page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 36px 40px;
+}
+
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.page__title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--fg-0);
+}
+
+.page__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-4);
+}
+
+.page__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--radius-base);
+  background: var(--accent-0);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.page__cta:hover {
+  background: var(--accent-1);
+}
+
+.page__empty {
+  color: var(--fg-4);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+/* ── Flows gallery ──────────────────────────────────────────────────── */
+
+.flows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.flow-card {
+  position: relative;
+  border: 1px solid var(--border-alpha-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.flow-card:hover {
+  border-color: var(--border-alpha-2);
+  transform: translateY(-2px);
+}
+
+.flow-card--active {
+  border-color: var(--accent-0);
+}
+
+.flow-card__thumb {
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(59, 130, 246, 0.12), transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(156, 130, 229, 0.1), transparent 55%),
+    var(--surface-0);
+}
+
+.flow-card__thumb-glyph {
+  font-size: 30px;
+  color: var(--fg-4);
+}
+
+.flow-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+}
+
+.flow-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-card__date {
+  font-size: 11px;
+  color: var(--fg-4);
+}
+
+.flow-card__delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: rgba(16, 16, 16, 0.7);
+  color: var(--fg-3);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 100ms ease, color 80ms ease;
+}
+
+.flow-card:hover .flow-card__delete {
+  opacity: 1;
+}
+
+.flow-card__delete:hover {
+  color: #f66950;
+}
+
+/* ── Image Gen page ─────────────────────────────────────────────────── */
+
+.page--imagegen {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.imagegen-form {
+  width: 290px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.imagegen-form__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg-0);
+}
+
+.imagegen-form__label {
+  display: flex;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--fg-4);
+  margin-top: 6px;
+}
+
+/* Reference tiles — Magnific's "Style / Character / + Add" row */
+.imagegen-refs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.imagegen-ref {
+  position: relative;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.imagegen-ref img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border-alpha-1);
+  display: block;
+}
+
+.imagegen-ref--add {
+  height: 78px;
+  justify-content: flex-start;
+  padding-top: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-3);
+}
+
+.imagegen-ref__tile {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px dashed var(--border-alpha-2);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.imagegen-ref--add:hover .imagegen-ref__tile {
+  border-color: var(--accent-0);
+  color: var(--fg-0);
+}
+
+.imagegen-ref__name {
+  font-size: 10px;
+  color: var(--fg-3);
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imagegen-ref__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(16, 16, 16, 0.9);
+  border: 1px solid var(--border-alpha-2);
+  color: var(--fg-1);
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.imagegen-ref__remove:hover {
+  color: #f66950;
+}
+
+.imagegen-form__model {
+  padding: 8px 12px;
+  border-radius: var(--radius-base);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-alpha-0);
+  font-size: 12px;
+  color: var(--fg-1);
+}
+
+.imagegen-form__prompt {
+  background: #101013;
+  color: var(--fg-0);
+  border: 1px solid var(--border-alpha-1);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+.imagegen-form__prompt:focus {
+  border-color: var(--accent-0);
+}
+
+.imagegen-form__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.imagegen-form__generate {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-base);
+  background: var(--accent-0);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.imagegen-form__generate:hover:not([disabled]) {
+  background: var(--accent-1);
+}
+
+.imagegen-form__generate[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.imagegen-gallery {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+/* ── Library grid ───────────────────────────────────────────────────── */
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.library-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.library-tile img,
+.library-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.library-tile:hover {
+  border-color: var(--border-alpha-2);
+}
+
+.library-tile--pending {
+  color: var(--fg-4);
+  font-size: 20px;
+}
+
+.library-tile__download {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(16, 16, 16, 0.75);
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 100ms ease;
+}
+
+.library-tile:hover .library-tile__download {
+  opacity: 1;
+}
+
+.library-tile__badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(16, 16, 16, 0.75);
+  padding: 2px 8px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+/* Edge cut button — scissors at the selected edge's midpoint */
+.edge-cut-btn {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 1.5px solid var(--accent-0, #3b82f6);
+  color: var(--fg-0);
+  cursor: pointer;
+  pointer-events: all;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+}
+
+.edge-cut-btn:hover {
+  background: var(--accent-0, #3b82f6);
+  color: #fff;
+}
+
+/* Spinner icon rotation (IconSpinner in canvas/icons.tsx) */
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-spin {
+  animation: icon-spin 0.8s linear infinite;
+}
+
+/* ── Multi-select toolbar (Magnific-style) ──────────────────────────── */
+
+.selection-toolbar {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  background: #202024;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.selection-toolbar__btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.selection-toolbar__btn:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.selection-toolbar__btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.selection-toolbar__btn--danger:hover:not([disabled]) {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.selection-toolbar__btn--caret {
+  width: 18px;
+  font-size: 10px;
+  margin-left: -2px;
+}
+
+.selection-toolbar__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.selection-toolbar__menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  background: #202024;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+
+.selection-toolbar__menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.selection-toolbar__menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Group frame node ───────────────────────────────────────────────── */
+
+/* Kill React Flow's built-in styling for node type "group" (light-grey
+   150px box) — our GroupNodeCard draws the whole frame itself. */
+.react-flow__node-group {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 0 !important;
+}
+
+.group-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.selection-toolbar__menu--colors {
+  flex-direction: row;
+  gap: 6px;
+}
+
+.group-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  padding: 0;
+}
+
+.group-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.group-frame {
+  position: relative;
+  border: 1px solid rgba(59, 130, 246, 0.55);
+  border-radius: 16px;
+  background: rgba(59, 130, 246, 0.05);
+  box-sizing: border-box;
+}
+
+.group-frame--selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6, 0 0 18px rgba(59, 130, 246, 0.2);
+}
+
+.group-frame__label {
+  position: absolute;
+  top: -24px;
+  left: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.85;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Magnific-style square default canvas for empty generator nodes */
+.node-card--generator .node-body--image .character-empty {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  width: 100%;
+  border-radius: 12px;
+}
+
+/* Chip footer: [- x1 +] [model ⌄] [1:1 ⌄] [⚙] … (▶) */
+.node-genfooter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.node-genfooter__spacer {
+  flex: 1;
+}
+
+.node-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.node-chip__caret {
+  font-size: 9px;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.node-chip--button {
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 80ms ease, background 80ms ease;
+}
+
+.node-chip--button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.node-chip--stepper {
+  padding: 2px 4px;
+  gap: 2px;
+}
+
+.node-chip__step {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.node-chip__step:hover:not([disabled]) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.node-chip__step[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.node-chip__step-value {
+  font-size: 11px;
+  color: var(--text);
+  min-width: 18px;
+  text-align: center;
+}
+
+.node-genfooter__icon-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 0;
+  cursor: pointer;
+  transition: color 80ms ease, background 80ms ease;
+}
+
+.node-genfooter__icon-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.node-genfooter__run {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  color: #fff;
+  background: #2f3137;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0 0 0 1px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 80ms ease, transform 80ms ease;
+}
+
+.node-genfooter__run:hover {
+  background: #3a3d44;
+  transform: scale(1.05);
+}
+
+.node-genfooter__run[disabled],
+.node-genfooter__icon-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.node-genfooter__run--running {
+  background: var(--accent);
+  animation: flow-pulse 2s ease-in-out infinite;
 }
 
 /* Status strip */
@@ -1226,10 +2459,10 @@ button:disabled {
 .status-strip {
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
+  top: 14px;
+  bottom: 14px;
   width: 3px;
-  border-radius: 2px 0 0 2px;
+  border-radius: 0 3px 3px 0;
 }
 
 @keyframes flow-pulse {
@@ -1293,17 +2526,20 @@ button:disabled {
      dot positions relative to this absolute host, which works fine. */
 }
 
+/* Magnific-style side buttons: small rounded squares hugging the card
+   edge instead of dots. */
 .node-handle::after {
   content: "";
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border-radius: 50%;
-  background: var(--panel-high);
-  border: 1.5px solid var(--muted);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 5px;
+  background: #232327;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   transition: width 90ms ease, height 90ms ease, margin 90ms ease,
     background 90ms ease, border-color 90ms ease, box-shadow 90ms ease;
   pointer-events: none;
@@ -1312,12 +2548,12 @@ button:disabled {
 .node-handle:hover::after,
 .node-handle.connectionindicator:hover::after,
 .react-flow__handle.connecting.node-handle::after {
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.28);
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  background: #3b82f6;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.28);
 }
 
 /* Drop-add popover — appears at the cursor when a connection drag ends on
@@ -1375,12 +2611,27 @@ button:disabled {
   stroke: var(--muted);
 }
 
+/* Flow-running edge — blue marching dashes while the target node is
+   queued/running, so the active pipeline path lights up. */
+@keyframes edge-dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.react-flow__edge.edge-running .react-flow__edge-path {
+  stroke: var(--accent-0, #3b82f6) !important;
+  stroke-dasharray: 7 5;
+  animation: edge-dash-flow 0.7s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.6));
+}
+
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:focus .react-flow__edge-path,
 .react-flow__edge:focus-visible .react-flow__edge-path {
   stroke: var(--accent) !important;
   stroke-width: 3 !important;
-  filter: drop-shadow(0 0 4px rgba(124, 92, 255, 0.5));
+  filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.5));
 }
 
 /* Variant-pin chip — sits at the edge midpoint when the edge has a
@@ -1624,11 +2875,10 @@ button:disabled {
 
 .thumbnail-tile {
   position: relative;
-  /* Match video-tile sizing so a 4-variant image grid and a 4-variant
-     video grid render the same dimensions side-by-side. Was a fixed
-     48px before, which made image tiles ~half the height of video
-     tiles in a 2x2 grid at the same card width. */
-  aspect-ratio: 16 / 9;
+  /* Aspect follows the node's generated/selected ratio — set per-node
+     via the --tile-aspect custom property on .thumbnail-grid (see
+     ImageBody). Falls back to 16:9 when the node has no aspect yet. */
+  aspect-ratio: var(--tile-aspect, 16 / 9);
   border-radius: 6px;
   background: linear-gradient(135deg, var(--panel-high), var(--panel-higher));
   border: 1px solid var(--border);
@@ -1804,22 +3054,21 @@ button:disabled {
 }
 
 .thumbnail-grid--1 .thumbnail-tile:not(.thumbnail-tile--filled) {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--tile-aspect, 16 / 9);
 }
 
 .thumbnail-grid--1 .thumbnail-tile__placeholder {
   position: relative;
   inset: auto;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--tile-aspect, 16 / 9);
 }
 
 .thumbnail-grid--1 .thumbnail-tile__img {
   position: relative;
   width: 100%;
-  height: auto;
-  max-height: 320px;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
 }
 
 .thumbnail-tile__icon {
@@ -2996,7 +4245,7 @@ button:disabled {
   transition: opacity 120ms ease;
 }
 
-.node-card:hover .node-header__actions,
+.node-shell:hover .node-header__actions,
 .node-header__actions:has(.node-header__btn--running) {
   opacity: 1;
   pointer-events: auto;
@@ -3613,6 +4862,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   height: 34px;
   padding: 0 16px;
   border-radius: 8px;
@@ -4845,8 +6095,8 @@ button:disabled {
 .node-card--llm-busy::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 14px;
+  right: 14px;
   top: 0;
   height: 2px;
   background: linear-gradient(

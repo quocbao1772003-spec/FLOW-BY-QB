@@ -1,4 +1,4 @@
-.PHONY: help install install-dev update dev agent frontend extension clean
+.PHONY: help install install-dev update upgrade dev agent frontend extension clean
 
 # Prefer uv (https://github.com/astral-sh/uv) — ~10× faster than pip.
 # Falls back to stdlib venv + pip when uv is not installed.
@@ -9,6 +9,7 @@ help:
 	@echo "  make install      - install runtime deps (agent + frontend)"
 	@echo "  make install-dev  - install agent with dev extras (ruff, pytest)"
 	@echo "  make update       - upgrade existing deps (agent + frontend)"
+	@echo "  make upgrade      - git pull + smart dep update (./update.sh)"
 	@echo "  make dev          - hint: run agent + frontend in separate terminals"
 	@echo "  make agent        - run agent only (FastAPI on :8101)"
 	@echo "  make frontend     - run frontend only (Vite on :5173)"
@@ -38,6 +39,9 @@ else
 	cd agent && .venv/bin/pip install -U -e .
 endif
 	cd frontend && npm update
+
+upgrade:
+	@bash ./update.sh
 
 dev:
 	@echo "Run 'make agent' and 'make frontend' in separate terminals."

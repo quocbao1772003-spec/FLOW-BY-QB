@@ -2,7 +2,6 @@ import { useState, useRef, type KeyboardEvent } from "react";
 import { useBoardStore } from "../store/board";
 import { ActivityBell } from "./activity/ActivityBell";
 import { AiProviderBadge } from "./AiProviderBadge";
-import { SponsorButton } from "./SponsorDialog";
 
 export function Toolbar() {
   const boardName = useBoardStore((s) => s.boardName);
@@ -36,7 +35,9 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <span className="toolbar-wordmark">Flowboard</span>
-      <span className="toolbar-sep" aria-hidden="true">/</span>
+      <span className="toolbar-sep" aria-hidden="true">›</span>
+      <span className="toolbar-crumb">Personal</span>
+      <span className="toolbar-sep" aria-hidden="true">›</span>
       {editing ? (
         <input
           ref={inputRef}
@@ -61,7 +62,6 @@ export function Toolbar() {
       <div className="toolbar-actions">
         <ActivityBell />
         <AiProviderBadge />
-        <SponsorButton />
       </div>
     </div>
   );

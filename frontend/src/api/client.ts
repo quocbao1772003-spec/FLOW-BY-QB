@@ -110,7 +110,7 @@ export function getHealth() {
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
 
-export type NodeType = "character" | "image" | "video" | "prompt" | "note" | "visual_asset" | "Storyboard";
+export type NodeType = "character" | "image" | "video" | "prompt" | "note" | "visual_asset" | "Storyboard" | "assistant" | "group";
 export type NodeStatus = "idle" | "queued" | "running" | "done" | "error";
 
 export interface Board {
@@ -185,6 +185,8 @@ export function createNode(input: {
   type: NodeType;
   x: number;
   y: number;
+  w?: number;
+  h?: number;
   data?: object;
 }): Promise<NodeDTO> {
   return api<NodeDTO>("/api/nodes", {
@@ -459,6 +461,24 @@ export function getMediaStatus(mediaId: string): Promise<MediaStatus> {
   return api<MediaStatus>(`/api/media/${encodeURIComponent(clean)}/status`);
 }
 
+// ── Library (all generated/uploaded media) ─────────────────────────────────
+
+export interface AssetItem {
+  id: number;
+  media_id: string;
+  kind: "image" | "video";
+  mime: string | null;
+  node_id: number | null;
+  created_at: string | null;
+}
+
+export function listAssets(kind?: "image" | "video", limit = 500): Promise<AssetItem[]> {
+  const params = new URLSearchParams();
+  if (kind) params.set("kind", kind);
+  params.set("limit", String(limit));
+  return api<AssetItem[]>(`/api/assets?${params.toString()}`);
+}
+
 export function mediaUrl(mediaId: string): string {
   const clean = mediaId.replace(/^media\//, "");
   return `/media/${encodeURIComponent(clean)}`;
@@ -478,18 +498,78 @@ export interface UploadResponse {
   height?: number;
 }
 
+// ── client-side compression ──────────────────────────────────────────────
+// The upload pipeline inflates bytes twice (base64 +33% agent→extension,
+// then base64-in-JSON again extension→Google), so the cheapest win is
+// shrinking the input before it leaves the browser. Flow only uses uploads
+// as gen references — anything beyond ~2048px is wasted upstream bandwidth.
+const COMPRESS_MAX_DIM = 2048;
+const COMPRESS_SKIP_BYTES = 500 * 1024; // small files aren't worth re-encoding
+const COMPRESS_QUALITY = 0.85;
+
+async function compressImageFile(file: File): Promise<File> {
+  // GIFs may be animated — a canvas re-encode would flatten them to 1 frame.
+  if (file.type === "image/gif") return file;
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file; // undecodable here — let the backend's sniffer decide
+  }
+
+  try {
+    const { width, height } = bitmap;
+    const needsResize = Math.max(width, height) > COMPRESS_MAX_DIM;
+    if (!needsResize && file.size <= COMPRESS_SKIP_BYTES) return file;
+
+    const scale = needsResize ? COMPRESS_MAX_DIM / Math.max(width, height) : 1;
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+
+    // WebP keeps alpha and compresses best; the agent allowlists it already.
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", COMPRESS_QUALITY),
+    );
+    // Keep the original when re-encoding didn't actually help.
+    if (!blob || blob.size >= file.size) return file;
+
+    const name = file.name.replace(/\.[^.]+$/, "") + ".webp";
+    return new File([blob], name, { type: "image/webp" });
+  } finally {
+    bitmap.close();
+  }
+}
+
 export async function uploadImage(
   file: File,
   projectId: string,
   nodeId?: number,
 ): Promise<UploadResponse> {
+  const t0 = performance.now();
+  const compressed = await compressImageFile(file);
+  const t1 = performance.now();
   const form = new FormData();
   form.append("project_id", projectId);
   if (nodeId !== undefined) form.append("node_id", String(nodeId));
-  form.append("file", file);
+  form.append("file", compressed);
 
   // Don't set Content-Type — the browser sets it with the correct boundary.
   const res = await fetch("/api/upload", { method: "POST", body: form });
+  const t2 = performance.now();
+  // eslint-disable-next-line no-console
+  console.info(
+    `[upload] ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ` +
+      `${(compressed.size / 1024).toFixed(0)}KB · compress ${(t1 - t0).toFixed(0)}ms · ` +
+      `agent+flow ${(t2 - t1).toFixed(0)}ms`,
+  );
   if (!res.ok) {
     throw new Error(await extractErrorMessage(res));
   }
@@ -911,4 +991,30 @@ export function getFlowSyncStatus(): Promise<SyncStatusResponse> {
 
 export function syncBoardsUpToFlow(): Promise<SyncUpResponse> {
   return api<SyncUpResponse>("/api/flow/projects/sync-up", { method: "POST" });
+}
+
+
+
+// ── Assistant node (Gemini chat) ────────────────────────────────────────
+
+export interface AssistantRunResponse {
+  node_id: number;
+  response: string;
+  model: string;
+}
+
+export async function runAssistant(
+  nodeId: number,
+  prompt: string,
+  model: string,
+): Promise<AssistantRunResponse> {
+  const res = await fetch("/api/assistant/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node_id: nodeId, prompt, model }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res));
+  }
+  return res.json() as Promise<AssistantRunResponse>;
 }

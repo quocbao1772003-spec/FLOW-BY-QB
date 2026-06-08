@@ -23,6 +23,11 @@ import {
   patchNode,
 } from "../api/client";
 import {
+  MentionAutocomplete,
+  type MentionAutocompleteHandle,
+  type MentionNode,
+} from "./MentionAutocomplete";
+import {
   CHARACTER_GENDERS,
   CHARACTER_COUNTRIES,
   CHARACTER_VIBES,
@@ -244,7 +249,7 @@ export function GenerationDialog() {
   const [openVariantPicker, setOpenVariantPicker] = useState<string | null>(null);
 
   const dialogRef = useRef<HTMLDivElement>(null);
-  const firstFocusRef = useRef<HTMLTextAreaElement>(null);
+  const firstFocusRef = useRef<MentionAutocompleteHandle | HTMLTextAreaElement>(null);
   const triggerRef = useRef<Element | null>(null);
 
   const rfId = openDialog.rfId;
@@ -346,6 +351,27 @@ export function GenerationDialog() {
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     : [];
 
+  // Assistant sources — Assistant nodes feed their LLM analysis text
+  // into downstream image / video generation via the node's aiBrief
+  // (mirrored by the agent route). We surface them as their own chip
+  // type so the user can SEE which Assistant is contributing context
+  // to the gen — same UX guarantee as prompt-text refs.
+  const assistantSourceNodes = (!isVideo || isOmniVideo) && rfId
+    ? edges
+        .filter((e) => e.target === rfId)
+        .map((e) => {
+          const n = nodes.find((node) => node.id === e.source);
+          if (!n || n.data.type !== "assistant") return null;
+          const text =
+            (typeof n.data.assistantResponse === "string" && n.data.assistantResponse) ||
+            (typeof n.data.aiBrief === "string" && n.data.aiBrief) ||
+            "";
+          if (!text) return null;
+          return { edgeId: e.id, node: n, text };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : [];
+
   const refSourceNodes = (!isVideo || isOmniVideo) && rfId
     ? edges
         .filter((e) => e.target === rfId)
@@ -385,6 +411,53 @@ export function GenerationDialog() {
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     : [];
 
+  // ── @-mention support ─────────────────────────────────────────────
+  // Build the lists the popover renders. Connected = nodes already
+  // wired into this target; disconnected = the rest of the board.
+  // Excludes the target node itself (no self-mention).
+  const addEdgeFromConnection = useBoardStore((s) => s.addEdgeFromConnection);
+  const connectedMentionIds = new Set(
+    edges.filter((e) => e.target === rfId).map((e) => e.source),
+  );
+  const mentionNodeShape = (n: typeof nodes[number]): MentionNode => {
+    const d = n.data as Record<string, unknown>;
+    const sid = (d.shortId as string) ?? n.id;
+    const ty =
+      (d.type as string | undefined) === "visual_asset"
+        ? "VisualAsset"
+        : ((d.type as string | undefined) ?? "Node").replace(/^[a-z]/, (c) =>
+            c.toUpperCase(),
+          );
+    const rawLabel =
+      (typeof d.aiBrief === "string" && d.aiBrief) ||
+      (typeof d.prompt === "string" && d.prompt) ||
+      (typeof d.assistantResponse === "string" && d.assistantResponse) ||
+      "";
+    const customTitle =
+      typeof d.title === "string" && d.title.trim()
+        ? d.title.trim()
+        : undefined;
+    return {
+      id: n.id,
+      type: ty,
+      shortId: sid,
+      label: rawLabel.replace(/\s+/g, " ").slice(0, 60),
+      customTitle,
+    };
+  };
+  const connectedMentions: MentionNode[] = nodes
+    .filter((n) => n.id !== rfId && connectedMentionIds.has(n.id))
+    .map(mentionNodeShape);
+  const disconnectedMentions: MentionNode[] = nodes
+    .filter((n) => n.id !== rfId && !connectedMentionIds.has(n.id))
+    .map(mentionNodeShape);
+  const handleMentionPick = (sourceNodeId: string, isConnected: boolean) => {
+    if (isConnected || !rfId) return;
+    // Auto-wire the edge so the dispatch path sees the mentioned node
+    // as a first-class upstream source (same shape as a manual drag).
+    void addEdgeFromConnection(sourceNodeId, rfId);
+  };
+
   // Reset form when dialog opens for a different node
   useEffect(() => {
     if (rfId !== null) {
@@ -413,8 +486,22 @@ export function GenerationDialog() {
       // Image / video → match upstream aspect when available; fall back to
       // landscape (image) / landscape (video) when the graph has no info.
       let nextAspect: AspectKey;
+      const ownData = useBoardStore
+        .getState()
+        .nodes.find((n) => n.id === rfId)?.data;
+      const ownAspect = ownData?.aspectRatio;
+      const validOwnAspect =
+        typeof ownAspect === "string" &&
+        (openNodeType === "video"
+          ? VIDEO_ASPECT_RATIOS.some((p) => p.key === ownAspect)
+          : IMAGE_ASPECT_RATIOS.some((p) => p.key === ownAspect));
       if (openNodeType === "character") {
         nextAspect = "IMAGE_ASPECT_RATIO_SQUARE";
+      } else if (validOwnAspect) {
+        // The node carries its own aspect (set via the card's footer
+        // dropdown or a previous gen) — that's the user's choice, honour
+        // it over upstream inheritance.
+        nextAspect = ownAspect as AspectKey;
       } else {
         const inherited = pickDefaultAspect(
           rfId,
@@ -427,11 +514,18 @@ export function GenerationDialog() {
         } else if (openNodeType === "video") {
           nextAspect = "VIDEO_ASPECT_RATIO_LANDSCAPE";
         } else {
-          nextAspect = "IMAGE_ASPECT_RATIO_LANDSCAPE";
+          // Match the card footer's default: square.
+          nextAspect = "IMAGE_ASPECT_RATIO_SQUARE";
         }
       }
       setAspectRatio(nextAspect);
-      setVariants(1);
+      // Honour the card footer's variant stepper when set.
+      const ownVariants = ownData?.variantCount;
+      setVariants(
+        typeof ownVariants === "number" && ownVariants >= 1
+          ? Math.min(ownVariants, 4)
+          : 1,
+      );
       setCamera("static");
       // Hydrate storyboard grid from existing node data when reopening.
       // Fresh nodes + legacy values ("3x3" from 1.2.15-1.2.18) → "2x2".
@@ -816,31 +910,28 @@ export function GenerationDialog() {
               </label>
               <span className="gen-dialog__char-count">{prompt.length}/500</span>
             </div>
-            <textarea
-              id="gen-prompt"
-              ref={firstFocusRef}
-              className="gen-dialog__textarea"
-              rows={5}
-              maxLength={500}
+            <MentionAutocomplete
+              ref={firstFocusRef as React.RefObject<MentionAutocompleteHandle>}
               value={prompt}
-              onChange={(e) => {
-                setPrompt(e.target.value);
+              onChange={(next) => {
+                // Honour the existing 500-char ceiling.
+                if (next.length > 500) return;
+                setPrompt(next);
                 if (autoPromptUsed) setAutoPromptUsed(false);
               }}
+              onMention={handleMentionPick}
+              connectedNodes={connectedMentions}
+              disconnectedNodes={disconnectedMentions}
               placeholder={
                 isVideo
-                  ? "Bỏ trống để tự sinh motion prompt từ source image ✨"
+                  ? "Bỏ trống để tự sinh motion prompt — gõ @ để tag node ✨"
                   : isPrompt
-                  ? "Nhập prompt mồi để feed cho downstream image / video…"
-                  : "Bỏ trống để tự generate prompt từ upstream nodes ✨"
+                  ? "Nhập prompt mồi — gõ @ để tag node…"
+                  : "Bỏ trống để tự generate — gõ @ để tag node ✨"
               }
-              disabled={isWorking}
-              readOnly={hasStoryboardUpstream}
-              title={
-                hasStoryboardUpstream
-                  ? "Locked: storyboard motion template (animates panels in order)"
-                  : undefined
-              }
+              disabled={isWorking || hasStoryboardUpstream}
+              rows={5}
+              className="gen-dialog__textarea"
             />
             {hasStoryboardUpstream && (
               <p className="gen-dialog__hint gen-dialog__hint--locked">
@@ -1031,11 +1122,11 @@ export function GenerationDialog() {
             media but their text feeds the auto-prompt synth, so we
             surface them as text chips next to the thumbnails. */}
         {(!isVideo || isOmniVideo)
-          && (refSourceNodes.length > 0 || promptSourceNodes.length > 0)
+          && (refSourceNodes.length > 0 || promptSourceNodes.length > 0 || assistantSourceNodes.length > 0)
           && (
           <div className="gen-dialog__field">
             <span className="gen-dialog__label">
-              Source references ({refSourceNodes.length + promptSourceNodes.length})
+              Source references ({refSourceNodes.length + promptSourceNodes.length + assistantSourceNodes.length})
             </span>
             <div className="ref-source-row">
               {promptSourceNodes.map((p) => {
@@ -1054,6 +1145,37 @@ export function GenerationDialog() {
                     </div>
                     <span className="ref-source-chip__id">
                       #{p.node.data.shortId}
+                    </span>
+                  </div>
+                );
+              })}
+              {assistantSourceNodes.map((a) => {
+                const preview = a.text.trim().slice(0, 120) || "(empty response)";
+                const truncated = a.text.length > 120;
+                return (
+                  <div
+                    key={a.edgeId}
+                    className="ref-source-chip ref-source-chip--prompt"
+                    title={`Assistant #${a.node.data.shortId} \u2014 ${a.text.slice(0, 500)}${a.text.length > 500 ? "..." : ""}`}
+                    style={{
+                      background: "rgba(93, 185, 122, 0.08)",
+                      border: "1px solid rgba(93, 185, 122, 0.35)",
+                    }}
+                  >
+                    <div className="ref-source-chip__prompt-body">
+                      <span
+                        className="ref-source-chip__prompt-icon"
+                        aria-hidden="true"
+                        style={{ color: "#5db97a" }}
+                      >
+                        ✨
+                      </span>
+                      <span className="ref-source-chip__prompt-text">
+                        {preview}{truncated ? "…" : ""}
+                      </span>
+                    </div>
+                    <span className="ref-source-chip__id">
+                      #{a.node.data.shortId}
                     </span>
                   </div>
                 );

@@ -21,6 +21,10 @@ NodeType = Literal[
     # `image` for storage / dispatch — see frontend/src/lib/storyboardPrompt.ts
     # for the template that drives gen_image.
     "Storyboard",
+    "assistant",
+    # group = visual frame that contains other nodes (members store the
+    # frame's node id in data.groupId). No generation semantics.
+    "group",
 ]
 NodeStatus = Literal["idle", "queued", "running", "done", "error"]
 

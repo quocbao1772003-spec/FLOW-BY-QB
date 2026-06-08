@@ -10,6 +10,7 @@ import {
 } from "../../api/client";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderSetupModal } from "./ProviderSetupModal";
+import { IconSpinner } from "../../canvas/icons";
 
 /**
  * Single-provider model — one AI provider serves all 3 features
@@ -397,13 +398,15 @@ interface ConnectionTestRowProps {
  * point at the same provider in single-provider mode. */
 function ConnectionTestRow({ providerLabel, result, onTest }: ConnectionTestRowProps) {
   const icon =
-    result.state === "ok"
-      ? "✓"
-      : result.state === "fail"
-        ? "✗"
-        : result.state === "testing"
-          ? "⏳"
-          : "○";
+    result.state === "ok" ? (
+      "✓"
+    ) : result.state === "fail" ? (
+      "✗"
+    ) : result.state === "testing" ? (
+      <IconSpinner size={12} />
+    ) : (
+      "○"
+    );
   const subtitle =
     result.state === "ok" && result.latencyMs != null
       ? `Connected · ${result.latencyMs}ms · powers Auto-Prompt, Vision, Planner`

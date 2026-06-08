@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
@@ -9,15 +9,20 @@ import {
   normaliseStoryboardGrid,
   resolveStoryboardLayout,
 } from "../lib/storyboardPrompt";
-
-const ICON: Record<string, string> = {
-  character: "◎",
-  image: "▣",
-  video: "▶",
-  prompt: "✦",
-  note: "✎",
-  visual_asset: "◇",
-};
+import { ImageNodeToolbar } from "./ImageNodeToolbar";
+import { ImageEditModal } from "../components/ImageEditModal";
+import {
+  MentionAutocomplete,
+  type MentionAutocompleteHandle,
+  type MentionNode,
+} from "../components/MentionAutocomplete";
+import {
+  NodeTypeIcon,
+  IconPlay,
+  IconRefresh,
+  IconDownload,
+  IconReplace,
+} from "./icons";
 
 const STATUS_COLOR: Record<string, string> = {
   idle: "transparent",
@@ -767,6 +772,16 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
     );
   }
 
+  // Tile aspect follows the node's generated/selected aspect ratio so a
+  // 1:1 gen renders a square node, 9:16 renders portrait, etc. Fed into
+  // CSS via a custom property (defaults to 16/9 when unknown).
+  const tileAspect =
+    data.aspectRatio === "IMAGE_ASPECT_RATIO_SQUARE"
+      ? "1 / 1"
+      : data.aspectRatio === "IMAGE_ASPECT_RATIO_PORTRAIT"
+        ? "9 / 16"
+        : "16 / 9";
+
   return (
     <div
       className={`node-body node-body--image${dragOver ? " node-body--image--over" : ""}`}
@@ -774,8 +789,42 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
     >
-      <div className={`thumbnail-grid thumbnail-grid--${tileCount}`}>
+      <div
+        className={`thumbnail-grid thumbnail-grid--${tileCount}`}
+        // position:relative so the Replace button pins to the IMAGE
+        // area's bottom-left (it used to anchor to the whole body and
+        // bled over the prompt line below).
+        style={{ "--tile-aspect": tileAspect, position: "relative" } as React.CSSProperties}
+      >
         {tiles}
+        {hasMedia && !isProcessing && (
+          <button
+            type="button"
+            className="image-replace-btn nodrag"
+            onClick={(e) => { e.stopPropagation(); onPick(); }}
+            disabled={uploading}
+            style={{
+              position: "absolute",
+              bottom: 10,
+              left: 10,
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background: "rgba(16, 16, 16, 0.85)",
+              color: "#f5f5f5",
+              border: "1px solid rgba(255, 255, 255, 0.15)",
+              borderRadius: 8,
+              fontSize: 12,
+              cursor: uploading ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <IconReplace size={12} /> {uploading ? "Uploading…" : "Replace"}
+          </button>
+        )}
       </div>
       {picker && (
         <VariantPicker
@@ -1472,13 +1521,128 @@ function NodeBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
   }
 }
 
+
+// Inline-rename for any node card. Double-click the title → edit mode;
+// Enter / blur → save via patchNode; Esc → cancel without saving. The
+// `title` field is the same one read by the @-mention dropdown's
+// customTitle path, so renaming a node here surfaces immediately
+// across the rest of the UI.
+function EditableNodeTitle({
+  rfId,
+  title,
+  fallback,
+}: {
+  rfId: string;
+  title: string | undefined;
+  fallback: string;
+}) {
+  const updateNodeData = useBoardStore((s) => s.updateNodeData);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title ?? "");
+
+  const display = (title?.trim() || fallback);
+
+  const commit = useCallback(async () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next === (title?.trim() ?? "")) return;
+    // Optimistic local update. `null` is the backend's explicit
+    // "delete this key" sentinel — undefined gets stripped by
+    // JSON.stringify and would leave the stale title in place.
+    updateNodeData(rfId, { title: next || null });
+    const dbId = parseInt(rfId, 10);
+    if (!isNaN(dbId)) {
+      try {
+        await patchNode(dbId, { data: { title: next || null } });
+      } catch (err) {
+        console.error("Failed to save node rename", err);
+      }
+    }
+  }, [rfId, draft, title, updateNodeData]);
+
+  const cancel = useCallback(() => {
+    setDraft(title ?? "");
+    setEditing(false);
+  }, [title]);
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          // Stop ReactFlow from intercepting Backspace / Delete
+          // (which would otherwise delete the node).
+          e.stopPropagation();
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        autoFocus
+        placeholder={fallback}
+        className="nodrag node-title-edit"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: "rgba(15, 17, 21, 0.95)",
+          color: "#e4e7ec",
+          border: "1px solid var(--accent, #5db97a)",
+          borderRadius: 4,
+          padding: "2px 6px",
+          fontSize: "inherit",
+          fontWeight: "inherit",
+          fontFamily: "inherit",
+          outline: "none",
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      className="node-title"
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        setDraft(title ?? "");
+        setEditing(true);
+      }}
+      title="Double-click to rename"
+      style={{ cursor: "text" }}
+    >
+      {display}
+    </span>
+  );
+}
+
 function downloadExt(type: string): string {
   if (type === "video") return "mp4";
   return "png";
 }
 
+/* Footer chip labels — mirror Magnific's "Google Nano Ban… / 1:1" chips.
+   Model label is informational (which Flow model serves this type);
+   aspect label maps Flow's enum onto the familiar ratio shorthand. */
+function modelLabel(type: string): string {
+  if (type === "video") return "Veo 3.1";
+  return "GemPix 2";
+}
+
 export function NodeCard(props: NodeProps<FlowNode>) {
   const data = props.data;
+  // Floating Magnific-style toolbar + Image Editor state.
+  // Toolbar shows on Image / visual_asset nodes when selected
+  // AND there's media to act on. Editor modal is portal'd so
+  // it escapes any ReactFlow transform clipping.
+  const [editorOpen, setEditorOpen] = useState(false);
+  const showToolbar = (data.type === 'image' || data.type === 'visual_asset') && props.selected;
+  const activeMediaId = (typeof data.mediaId === 'string' && data.mediaId)
+    || (Array.isArray(data.mediaIds) && data.mediaIds.find((m): m is string => typeof m === 'string' && !!m))
+    || null;
   const isNote = data.type === "note";
   const isGenerable = ["image", "prompt", "video", "visual_asset", "character", "Storyboard"].includes(data.type);
   const isRunning = data.status === "running";
@@ -1521,18 +1685,171 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     });
   }
 
-  return (
-    <div
-      className={`node-card${isNote ? " node-card--note" : ""}${
-        props.selected ? " node-card--selected" : ""
-      }${llmBusy ? " node-card--llm-busy" : ""}`}
-    >
-      <StatusStrip status={data.status} />
-      <Handle type="target" position={Position.Left} className="node-handle" />
+  // Magnific-style chip footer — shown on generator nodes (image /
+  // Storyboard / video). Variant stepper persists to the node so the
+  // next Generate picks it up; the other chips open the gen dialog.
+  const isImageGen = data.type === "image" || data.type === "Storyboard";
+  const isVideoGen = data.type === "video";
+  const showChipFooter = isImageGen || isVideoGen;
+  const variantCount = Math.max(1, Math.min(data.variantCount ?? 1, 4));
+  const hasAnyMedia = Boolean(
+    data.mediaId || (data.mediaIds ?? []).some((m) => typeof m === "string" && m),
+  );
 
-      <div className="node-header">
-        <span className="node-icon" aria-hidden="true">{ICON[data.type] ?? "□"}</span>
-        <span className="node-title">{data.title}</span>
+  // Inline prompt editing — Magnific-style: the prompt line in the card
+  // is a real input, not a shortcut to the dialog. Supports @-mentions
+  // (same component as the gen dialog / Assistant) — picking a node
+  // auto-wires it as an upstream ref.
+  const [promptEditing, setPromptEditing] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [mentions, setMentions] = useState<{
+    connected: MentionNode[];
+    disconnected: MentionNode[];
+  }>({ connected: [], disconnected: [] });
+  const promptEditorRef = useRef<MentionAutocompleteHandle>(null);
+  const promptWrapRef = useRef<HTMLDivElement>(null);
+
+  // Focus the editor when it opens (replaces the old textarea autoFocus).
+  useEffect(() => {
+    if (promptEditing) {
+      requestAnimationFrame(() => promptEditorRef.current?.focus());
+    }
+  }, [promptEditing]);
+
+  function buildMentions() {
+    const { nodes, edges } = useBoardStore.getState();
+    const connectedIds = new Set(
+      edges.filter((e) => e.target === props.id).map((e) => e.source),
+    );
+    const shape = (n: (typeof nodes)[number]): MentionNode => {
+      const d = n.data as Record<string, unknown>;
+      const ty =
+        (d.type as string | undefined) === "visual_asset"
+          ? "VisualAsset"
+          : ((d.type as string | undefined) ?? "Node").replace(/^[a-z]/, (c) =>
+              c.toUpperCase(),
+            );
+      const rawLabel =
+        (typeof d.aiBrief === "string" && d.aiBrief) ||
+        (typeof d.prompt === "string" && d.prompt) ||
+        (typeof d.assistantResponse === "string" && d.assistantResponse) ||
+        "";
+      return {
+        id: n.id,
+        type: ty,
+        shortId: (d.shortId as string) ?? n.id,
+        label: rawLabel.replace(/\s+/g, " ").slice(0, 60),
+        customTitle:
+          typeof d.title === "string" && d.title.trim()
+            ? d.title.trim()
+            : undefined,
+      };
+    };
+    return {
+      connected: nodes
+        .filter((n) => n.id !== props.id && connectedIds.has(n.id))
+        .map(shape),
+      disconnected: nodes
+        .filter((n) => n.id !== props.id && !connectedIds.has(n.id))
+        .map(shape),
+    };
+  }
+
+  function handleMentionPick(sourceNodeId: string, isConnected: boolean) {
+    if (isConnected) return;
+    // Auto-wire the edge so dispatch sees the mentioned node as a
+    // first-class upstream source (same as the gen dialog).
+    void useBoardStore.getState().addEdgeFromConnection(sourceNodeId, props.id);
+  }
+
+  function startPromptEdit(e: React.MouseEvent) {
+    e.stopPropagation();
+    setPromptDraft(data.prompt ?? "");
+    setMentions(buildMentions());
+    setPromptEditing(true);
+  }
+
+  function savePrompt() {
+    setPromptEditing(false);
+    const next = promptDraft;
+    if (next === (data.prompt ?? "")) return;
+    useBoardStore.getState().updateNodeData(props.id, { prompt: next });
+    const dbId = parseInt(props.id, 10);
+    if (!isNaN(dbId)) {
+      patchNode(dbId, { data: { prompt: next || null } }).catch(() => {});
+    }
+  }
+
+  // One-click generate from the footer ▶ — dispatches straight to Flow
+  // using the node's own prompt + footer settings, no dialog. Falls back
+  // to the dialog when there's no prompt yet (nothing to dispatch), or
+  // for Storyboard / video nodes whose dispatch needs the dialog's extra
+  // wiring (composite templates, source-variant selection).
+  function handleRunNow(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (llmBusy || isRunning) return;
+    const p = (data.prompt ?? "").trim();
+    if (!p || data.type !== "image") {
+      handleGenerate(e);
+      return;
+    }
+    void useGenerationStore.getState().dispatchGeneration(props.id, {
+      prompt: p,
+      kind: "image",
+      aspectRatio: data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE",
+      variantCount,
+    });
+  }
+
+  function setVariantCount(e: React.MouseEvent, next: number) {
+    e.stopPropagation();
+    const clamped = Math.max(1, Math.min(next, 4));
+    if (clamped === variantCount) return;
+    useBoardStore.getState().updateNodeData(props.id, { variantCount: clamped });
+    const dbId = parseInt(props.id, 10);
+    if (!isNaN(dbId)) {
+      patchNode(dbId, { data: { variantCount: clamped } }).catch(() => {});
+    }
+  }
+
+  // Aspect-ratio selector — persists the Flow enum on the node; the next
+  // Generate reads it as the dialog default.
+  const aspectOptions = isVideoGen
+    ? [
+        { v: "VIDEO_ASPECT_RATIO_PORTRAIT", label: "9:16" },
+        { v: "VIDEO_ASPECT_RATIO_LANDSCAPE", label: "16:9" },
+      ]
+    : [
+        { v: "IMAGE_ASPECT_RATIO_SQUARE", label: "1:1" },
+        { v: "IMAGE_ASPECT_RATIO_PORTRAIT", label: "9:16" },
+        { v: "IMAGE_ASPECT_RATIO_LANDSCAPE", label: "16:9" },
+      ];
+  const aspectValue =
+    aspectOptions.find((o) => o.v === data.aspectRatio)?.v ?? aspectOptions[0].v;
+
+  function onAspectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    const v = e.target.value;
+    useBoardStore.getState().updateNodeData(props.id, { aspectRatio: v });
+    const dbId = parseInt(props.id, 10);
+    if (!isNaN(dbId)) {
+      patchNode(dbId, { data: { aspectRatio: v } }).catch(() => {});
+    }
+  }
+
+  return (
+    // Magnific-style layout: type label ("eyebrow") floats above the
+    // card; the card itself is a clean rounded surface with a blue
+    // selection ring; generator nodes get a chip footer + round run.
+    <div className={`node-shell${props.selected ? " node-shell--selected" : ""}`}>
+      <div className="node-eyebrow">
+        <span className="node-icon" aria-hidden="true"><NodeTypeIcon type={data.type} /></span>
+        <EditableNodeTitle
+          rfId={props.id}
+          title={data.title as string | undefined}
+          fallback={`${data.type[0].toUpperCase()}${data.type.slice(1)} #${data.shortId}`}
+        />
+        <span className="node-short-id">#{data.shortId}</span>
         {llmBusy && (
           // Compact pill so the busy state reads at a glance even if the
           // body is collapsed. Title is contextual: composing vs. analysing.
@@ -1550,10 +1867,10 @@ export function NodeCard(props: NodeProps<FlowNode>) {
               title="Download"
               tabIndex={0}
             >
-              ⬇
+              <IconDownload size={13} />
             </button>
           )}
-          {isGenerable && (
+          {isGenerable && !showChipFooter && (
             <button
               className={`node-header__btn${isRunning ? " node-header__btn--running" : ""}`}
               onClick={handleGenerate}
@@ -1562,16 +1879,165 @@ export function NodeCard(props: NodeProps<FlowNode>) {
               tabIndex={0}
               disabled={llmBusy}
             >
-              ▶
+              <IconPlay size={12} />
             </button>
           )}
         </div>
-        <span className="node-short-id">#{data.shortId}</span>
       </div>
 
-      <NodeBody rfId={props.id} data={data} />
+      <div
+        data-node-card-rel-marker="1" style={{ position: "relative" }} className={`node-card${isNote ? " node-card--note" : ""}${
+          props.selected ? " node-card--selected" : ""
+        }${llmBusy ? " node-card--llm-busy" : ""}${showChipFooter ? " node-card--generator" : ""}`}
+      >
+        {showToolbar && activeMediaId && (
+          <ImageNodeToolbar
+            rfId={props.id}
+            hasMedia={!!activeMediaId}
+            onOpenEditor={() => setEditorOpen(true)}
+          />
+        )}
+        {editorOpen && activeMediaId && (
+          <ImageEditModal
+            rfId={props.id}
+            mediaId={activeMediaId}
+            onClose={() => setEditorOpen(false)}
+          />
+        )}
+        <StatusStrip status={data.status} />
+        <Handle type="target" position={Position.Left} className="node-handle" />
 
-      <Handle type="source" position={Position.Right} className="node-handle" />
+        <NodeBody rfId={props.id} data={data} />
+
+        {showChipFooter && (
+          // Magnific-style prompt line — click to edit in place; blur or
+          // Cmd/Ctrl+Enter saves, Esc cancels.
+          promptEditing ? (
+            <div
+              ref={promptWrapRef}
+              // Save when focus truly leaves the editor. The mention
+              // popover portals to <body>, so we defer and re-check the
+              // active element — after a pick the textarea regains focus
+              // before the timeout fires, so no premature save.
+              onBlur={() => {
+                setTimeout(() => {
+                  const el = document.activeElement;
+                  if (
+                    promptWrapRef.current &&
+                    el instanceof Node &&
+                    promptWrapRef.current.contains(el)
+                  ) {
+                    return;
+                  }
+                  savePrompt();
+                }, 120);
+              }}
+            >
+              <MentionAutocomplete
+                ref={promptEditorRef}
+                value={promptDraft}
+                onChange={setPromptDraft}
+                onMention={handleMentionPick}
+                connectedNodes={mentions.connected}
+                disconnectedNodes={mentions.disconnected}
+                onKeyDownPassthrough={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setPromptEditing(false);
+                  } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    savePrompt();
+                  }
+                }}
+                placeholder={
+                  isVideoGen
+                    ? "Describe the video — gõ @ để tag node…"
+                    : "Describe the image — gõ @ để tag node…"
+                }
+                rows={3}
+                className="node-genprompt-editor nodrag nowheel"
+              />
+            </div>
+          ) : (
+            <div
+              className={`node-genprompt nodrag${data.prompt?.trim() ? "" : " node-genprompt--empty"}`}
+              onClick={startPromptEdit}
+              title={data.prompt?.trim() || "Click to write a prompt"}
+              role="button"
+              tabIndex={0}
+            >
+              {data.prompt?.trim() ||
+                (isVideoGen
+                  ? "Describe the video you want to generate…"
+                  : "Describe the image you want to generate…")}
+            </div>
+          )
+        )}
+        {showChipFooter && (
+          // Magnific-style footer: [- x1 +] [model ⌄] [1:1 ⌄] [⚙] … (▶)
+          <div className="node-genfooter">
+            <span className="node-chip node-chip--stepper" title="Variants per generation">
+              <button
+                type="button"
+                className="node-chip__step nodrag"
+                onClick={(e) => setVariantCount(e, variantCount - 1)}
+                disabled={llmBusy || variantCount <= 1}
+                aria-label="Fewer variants"
+              >
+                –
+              </button>
+              <span className="node-chip__step-value">x{variantCount}</span>
+              <button
+                type="button"
+                className="node-chip__step nodrag"
+                onClick={(e) => setVariantCount(e, variantCount + 1)}
+                disabled={llmBusy || variantCount >= 4}
+                aria-label="More variants"
+              >
+                +
+              </button>
+            </span>
+            <select
+              className="node-chip node-chip--select nodrag"
+              value={modelLabel(data.type)}
+              onChange={() => {}}
+              onClick={(e) => e.stopPropagation()}
+              title="Flow model serving this node type"
+              aria-label="Model"
+            >
+              <option value={modelLabel(data.type)}>{modelLabel(data.type)}</option>
+            </select>
+            <select
+              className="node-chip node-chip--select nodrag"
+              value={aspectValue}
+              onChange={onAspectChange}
+              onClick={(e) => e.stopPropagation()}
+              title="Aspect ratio"
+              aria-label="Aspect ratio"
+            >
+              {aspectOptions.map((o) => (
+                <option key={o.v} value={o.v}>
+                  ▭ {o.label}
+                </option>
+              ))}
+            </select>
+            <span className="node-genfooter__spacer" />
+            <button
+              type="button"
+              className={`node-genfooter__run nodrag${isRunning ? " node-genfooter__run--running" : ""}`}
+              onClick={handleRunNow}
+              aria-label="Generate from this node"
+              title={llmBusy ? "Backend is still composing — try again in a moment" : "Generate"}
+              disabled={llmBusy}
+            >
+              {hasAnyMedia && !isRunning ? <IconRefresh size={13} /> : <IconPlay size={12} />}
+            </button>
+          </div>
+        )}
+
+        <Handle type="source" position={Position.Right} className="node-handle" />
+      </div>
     </div>
   );
 }
