@@ -88,6 +88,8 @@ Flowboard là workspace **canvas vô hạn** chạy **local trên máy bạn**, 
 
 **Yêu cầu:** WSL2 (Ubuntu) hoặc Linux/macOS · Python 3.11 · Node 20+ · Chrome · tài khoản Flow Pro/Ultra · 1 LLM CLI (`claude` / `gemini` / `codex`).
 
+Repo công khai — clone không cần token:
+
 ```bash
 git clone https://github.com/quocbao1772003-spec/FLOW-BY-QB.git
 cd FLOW-BY-QB
