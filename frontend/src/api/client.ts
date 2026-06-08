@@ -480,25 +480,38 @@ export function listAssets(kind?: "image" | "video", limit = 500): Promise<Asset
 }
 
 // ── Upscale (Flow upsampleImage → 2K / 4K) ─────────────────────────────────
+// The endpoint returns the upscaled image BYTES directly (Flow inlines the
+// result as base64; the backend decodes + streams it). So this resolves to
+// a Blob the caller can download.
 
-export interface UpscaleResponse {
-  media_id: string;
-  resolution: "2K" | "4K";
-}
-
-export function upscaleImage(
+export async function upscaleImage(
   mediaId: string,
   projectId: string,
   resolution: "2K" | "4K",
-): Promise<UpscaleResponse> {
-  return api<UpscaleResponse>("/api/upscale", {
+): Promise<Blob> {
+  const res = await fetch("/api/upscale", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       media_id: mediaId,
       project_id: projectId,
       resolution,
     }),
   });
+  if (!res.ok) {
+    // The error path returns JSON detail; success returns image bytes.
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      const d = body?.detail;
+      if (typeof d === "string") msg = d;
+      else if (d?.message) msg = String(d.message);
+    } catch {
+      /* keep status text */
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
 }
 
 export function mediaUrl(mediaId: string): string {

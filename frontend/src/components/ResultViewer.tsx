@@ -457,8 +457,20 @@ export function ResultViewer() {
     }
     setUpscaling(true);
     try {
-      const res = await upscaleImage(currentMediaId, projectId, "2K");
-      downloadMedia(res.media_id, "-2K");
+      const blob = await upscaleImage(currentMediaId, projectId, "2K");
+      // Download the upscaled bytes directly.
+      const safeTitle = ((data.title as string) || data.type).replace(
+        /[^A-Za-z0-9_-]+/g,
+        "_",
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeTitle}-${data.shortId}-2K.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       useGenerationStore.setState({
         error:

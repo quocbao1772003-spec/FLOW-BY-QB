@@ -1046,39 +1046,24 @@ class FlowSDK:
         if inner_err:
             return {"raw": resp, "error": inner_err}
 
-        new_id = _extract_upsampled_media_id(resp)
-        if new_id is None:
+        # upsampleImage returns the upscaled bytes INLINE as base64 in
+        # `data.encodedImage` (not a media_id like batchGenerateImages).
+        data = resp.get("data") if isinstance(resp, dict) else None
+        enc = data.get("encodedImage") if isinstance(data, dict) else None
+        if not isinstance(enc, str) or not enc:
             logger.error(
-                "upsample_image: no media_id in response (project_id=%s, "
-                "src=%s, res=%s) — raw=%r",
-                project_id, media_id, target_resolution, resp,
+                "upsample_image: no encodedImage (project_id=%s, src=%s, res=%s) "
+                "— data_keys=%r",
+                project_id, media_id, target_resolution,
+                list(data.keys()) if isinstance(data, dict) else None,
             )
-            return {"raw": resp, "error": "no_media_id_in_upsample_response"}
-        return {"raw": resp, "media_id": new_id}
-
-
-def _extract_upsampled_media_id(resp: Any) -> Optional[str]:
-    """upsampleImage returns the new media — handle the common shapes:
-    ``data.media.name``, ``data.media.mediaId``, or a media entry list."""
-    if not isinstance(resp, dict):
-        return None
-    data = resp.get("data")
-    if not isinstance(data, dict):
-        return None
-    media = data.get("media")
-    if isinstance(media, dict):
-        for k in ("name", "mediaId", "id"):
-            v = media.get(k)
-            if isinstance(v, str) and v:
-                return v
-    # Fallback: reuse the batchGenerateImages entry extractor.
-    try:
-        entries = extract_media_entries(resp)
-        if entries:
-            return entries[0].get("media_id")
-    except Exception:  # noqa: BLE001
-        pass
-    return None
+            return {"raw": resp, "error": "no encodedImage in upscale response"}
+        # Strip an optional data:-URI prefix.
+        if enc.startswith("data:"):
+            comma = enc.find(",")
+            if comma != -1:
+                enc = enc[comma + 1 :]
+        return {"raw": resp, "image_b64": enc}
 
 
 def _extract_project_id(resp: Any) -> Optional[str]:
