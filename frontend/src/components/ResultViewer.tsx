@@ -99,8 +99,9 @@ export function ResultViewer() {
   // Image editor (AI edit / Crop & Flip) — opens the full ImageEditModal
   // over the viewer with the chosen tool tab.
   const [editorTool, setEditorTool] = useState<null | "prompt" | "crop">(null);
-  // Upscale state (Flow upsampleImage → 2K / 4K).
-  const [upscaling, setUpscaling] = useState<null | "2K" | "4K">(null);
+  // Download dropdown (1K original / 2K upscaled).
+  const [dlOpen, setDlOpen] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -425,60 +426,48 @@ export function ResultViewer() {
 
   // Download the currently displayed variant. Same-origin /media/<id>
   // URL honours the `download` filename.
-  function handleDownload() {
-    if (!data || !currentMediaId) return;
+  function downloadMedia(mid: string, suffix: string) {
+    if (!data) return;
     const safeTitle = ((data.title as string) || data.type).replace(
       /[^A-Za-z0-9_-]+/g,
       "_",
     );
     const ext = data.type === "video" ? "mp4" : "png";
     const a = document.createElement("a");
-    a.href = mediaUrl(currentMediaId);
-    a.download = `${safeTitle}-${data.shortId}.${ext}`;
+    a.href = mediaUrl(mid);
+    a.download = `${safeTitle}-${data.shortId}${suffix}.${ext}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   }
 
-  async function handleUpscale(resolution: "2K" | "4K") {
-    if (!rfId || !data || !currentMediaId || upscaling) return;
+  // Download at the chosen resolution. "1K" = the current media as-is.
+  // "2K" = upscale via Flow first, then download the upscaled result.
+  async function handleDownloadAt(resolution: "1K" | "2K") {
+    if (!data || !currentMediaId || upscaling) return;
+    setDlOpen(false);
+    if (resolution === "1K" || isVideo) {
+      downloadMedia(currentMediaId, "");
+      return;
+    }
     const projectId = await useGenerationStore.getState().ensureProjectId();
     if (!projectId) {
       useGenerationStore.setState({ error: "Flow project chưa sẵn sàng." });
       return;
     }
-    setUpscaling(resolution);
+    setUpscaling(true);
     try {
-      const res = await upscaleImage(currentMediaId, projectId, resolution);
-      // Replace this variant's media with the upscaled one, in place.
-      const ids = (data.mediaIds ?? (data.mediaId ? [data.mediaId] : [])).slice();
-      if (data.mediaIds !== undefined) {
-        ids[activeIdx] = res.media_id;
-        useBoardStore.getState().updateNodeData(rfId, { mediaIds: ids });
-      } else {
-        useBoardStore.getState().updateNodeData(rfId, { mediaId: res.media_id });
-      }
-      const dbId = parseInt(rfId, 10);
-      if (!isNaN(dbId)) {
-        const { patchNode } = await import("../api/client");
-        patchNode(dbId, {
-          data:
-            data.mediaIds !== undefined
-              ? { mediaIds: ids }
-              : { mediaId: res.media_id },
-        }).catch(() => {});
-      }
-      setCacheKey((k) => k + 1);
-      setMediaReady(false);
+      const res = await upscaleImage(currentMediaId, projectId, "2K");
+      downloadMedia(res.media_id, "-2K");
     } catch (err) {
       useGenerationStore.setState({
         error:
           err instanceof Error
-            ? `Upscale ${resolution} thất bại: ${err.message}`
-            : `Upscale ${resolution} thất bại`,
+            ? `Upscale 2K thất bại: ${err.message}`
+            : "Upscale 2K thất bại",
       });
     } finally {
-      setUpscaling(null);
+      setUpscaling(false);
     }
   }
 
@@ -797,36 +786,63 @@ export function ResultViewer() {
             >
               <IconCrop size={13} /> Crop & Flip
             </button>
-            {!isVideo && (
-              <div style={{ display: "flex", gap: 6 }}>
+            {/* Download — dropdown to pick resolution (1K gốc / 2K upscale).
+                Video has no upscale, so it downloads directly. */}
+            {isVideo ? (
+              <button
+                className="result-viewer__btn"
+                onClick={() => downloadMedia(currentMediaId!, "")}
+                disabled={!currentMediaId}
+                title="Download"
+              >
+                <IconDownload size={13} /> Download
+              </button>
+            ) : (
+              <div style={{ position: "relative" }}>
                 <button
                   className="result-viewer__btn"
-                  style={{ flex: 1 }}
-                  onClick={() => void handleUpscale("2K")}
-                  disabled={!currentMediaId || upscaling !== null}
-                  title="Tăng độ phân giải lên 2K"
+                  style={{ width: "100%" }}
+                  onClick={() => setDlOpen((o) => !o)}
+                  disabled={!currentMediaId || upscaling}
                 >
-                  {upscaling === "2K" ? <IconSpinner size={13} /> : "⤢"} 2K
+                  {upscaling ? <IconSpinner size={13} /> : <IconDownload size={13} />}
+                  {upscaling ? " Upscaling 2K…" : " Download "}
+                  {!upscaling && <span style={{ opacity: 0.7 }}>⌄</span>}
                 </button>
-                <button
-                  className="result-viewer__btn"
-                  style={{ flex: 1 }}
-                  onClick={() => void handleUpscale("4K")}
-                  disabled={!currentMediaId || upscaling !== null}
-                  title="Tăng độ phân giải lên 4K (có thể cần gói Ultra)"
-                >
-                  {upscaling === "4K" ? <IconSpinner size={13} /> : "⤢"} 4K
-                </button>
+                {dlOpen && !upscaling && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "calc(100% + 6px)",
+                      left: 0,
+                      right: 0,
+                      background: "var(--surface-1, #1a1a1a)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 10,
+                      padding: 5,
+                      boxShadow: "0 10px 28px rgba(0,0,0,0.5)",
+                      zIndex: 5,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    <button
+                      className="result-viewer__btn"
+                      onClick={() => void handleDownloadAt("1K")}
+                    >
+                      Tải 1K (gốc)
+                    </button>
+                    <button
+                      className="result-viewer__btn"
+                      onClick={() => void handleDownloadAt("2K")}
+                    >
+                      Tải 2K (nâng cấp · ~10s)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-            <button
-              className="result-viewer__btn"
-              onClick={handleDownload}
-              disabled={!currentMediaId}
-              title="Download this variant"
-            >
-              <IconDownload size={13} /> Download
-            </button>
             <button
               className="result-viewer__btn"
               onClick={handleRegenerate}
