@@ -1,6 +1,7 @@
 <p align="center">
   <b>FLOWBOARD</b><br/>
-  <i>Infinite-canvas workspace cho AI media workflow — node graph, multi-page, image editor.</i>
+  <i>Infinite-canvas workspace cho AI media workflow — node graph, multi-page, image editor.</i><br/>
+  <sub>Tác giả: <b>Quốc Bảo</b> — Handora Team</sub>
 </p>
 
 <p align="center">
@@ -124,6 +125,10 @@ Sau đó restart `make agent` + `make frontend` và hard-refresh trình duyệt 
 
 - App là **local-only, single-user**: mỗi người chạy bản riêng trên máy mình, đăng nhập tài khoản Flow riêng. Board/ảnh nằm trên máy người đó.
 - Không gọi API LLM cloud trực tiếp — auto-prompt/vision/assistant shell ra CLI dùng subscription của bạn.
+
+## Tác giả
+
+**Quốc Bảo** — Handora Team.
 
 ## License
 

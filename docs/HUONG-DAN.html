@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flowboard — Hướng dẫn cài đặt & sử dụng</title>
+<style>
+  :root{
+    --bg:#101010; --surface:#1a1a1a; --surface2:#222; --border:#2b2b2b;
+    --fg:#f5f5f5; --fg2:#c5c5c5; --fg3:#aaa; --muted:#737373;
+    --accent:#3b82f6; --green:#3cd39f; --amber:#f4980a; --red:#f66950;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+    line-height:1.65; font-size:15px;
+  }
+  .wrap{display:grid; grid-template-columns:260px 1fr; max-width:1200px; margin:0 auto;}
+  /* Sidebar TOC */
+  nav.toc{
+    position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+    padding:28px 18px; border-right:1px solid var(--border); background:#0c0c0c;
+  }
+  nav.toc h2{font-size:15px; color:var(--accent); margin:0 0 14px;}
+  nav.toc a{display:block; color:var(--fg3); text-decoration:none; padding:5px 10px; border-radius:8px; font-size:13.5px; margin-bottom:2px;}
+  nav.toc a:hover{color:var(--fg); background:var(--surface);}
+  nav.toc .sub{padding-left:22px; font-size:13px;}
+  main{padding:40px 48px; min-width:0;}
+  /* Header */
+  .hero{text-align:center; padding:30px 0 18px;}
+  .hero h1{font-size:38px; letter-spacing:4px; margin:0; color:var(--amber);}
+  .hero p{color:var(--fg3); margin:8px 0 0;}
+  .badges{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:14px;}
+  .badge{font-size:11px; padding:4px 10px; border-radius:999px; background:var(--surface); border:1px solid var(--border); color:var(--fg2);}
+  h2.sec{font-size:24px; margin:46px 0 10px; padding-bottom:8px; border-bottom:1px solid var(--border);}
+  h3{font-size:18px; margin:28px 0 8px; color:var(--fg);}
+  h4{font-size:15px; margin:18px 0 6px; color:var(--accent);}
+  p{color:var(--fg2);}
+  a{color:var(--accent);}
+  ul,ol{color:var(--fg2); padding-left:22px;}
+  li{margin:5px 0;}
+  code{background:var(--surface2); padding:2px 6px; border-radius:5px; font-family:"Consolas",ui-monospace,monospace; font-size:13px; color:#ffd9a0;}
+  pre{background:#0c0c0c; border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; overflow-x:auto; position:relative;}
+  pre code{background:none; padding:0; color:#d6e2ff;}
+  .note{border-left:3px solid var(--accent); background:rgba(59,130,246,.08); padding:12px 16px; border-radius:0 10px 10px 0; margin:16px 0;}
+  .warn{border-left:3px solid var(--amber); background:rgba(244,152,10,.08); padding:12px 16px; border-radius:0 10px 10px 0; margin:16px 0;}
+  .danger{border-left:3px solid var(--red); background:rgba(246,105,80,.08); padding:12px 16px; border-radius:0 10px 10px 0; margin:16px 0;}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px;}
+  th,td{border:1px solid var(--border); padding:9px 12px; text-align:left;}
+  th{background:var(--surface); color:var(--fg);}
+  td{color:var(--fg2);}
+  .step{counter-reset:none; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 22px; margin:14px 0;}
+  .step .num{display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; background:var(--accent); color:#fff; border-radius:50%; font-weight:700; font-size:13px; margin-right:10px;}
+  .pill{display:inline-block; font-size:12px; padding:2px 9px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); color:var(--fg2); margin-right:6px;}
+  kbd{background:var(--surface2); border:1px solid var(--border); border-bottom-width:2px; border-radius:6px; padding:1px 7px; font-size:12px; font-family:monospace;}
+  footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:13px; text-align:center;}
+  @media(max-width:860px){ .wrap{grid-template-columns:1fr} nav.toc{display:none} main{padding:24px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="toc">
+  <h2>📖 Mục lục</h2>
+  <a href="#gioithieu">1. Giới thiệu</a>
+  <a href="#yeucau">2. Yêu cầu hệ thống</a>
+  <a href="#caidat">3. Cài đặt</a>
+  <a href="#extension" class="sub">3.1 Load extension</a>
+  <a href="#chay" class="sub">3.2 Chạy app</a>
+  <a href="#sudung">4. Sử dụng</a>
+  <a href="#sidebar" class="sub">4.1 Sidebar & 3 trang</a>
+  <a href="#node" class="sub">4.2 Node trên canvas</a>
+  <a href="#tagref" class="sub">4.3 Tag & reference</a>
+  <a href="#runflow" class="sub">4.4 Chạy pipeline</a>
+  <a href="#group" class="sub">4.5 Group node</a>
+  <a href="#editor" class="sub">4.6 Image Editor</a>
+  <a href="#imagegen" class="sub">4.7 Image Gen</a>
+  <a href="#library" class="sub">4.8 Library</a>
+  <a href="#phimtat">5. Phím tắt</a>
+  <a href="#capnhat">6. Cập nhật app</a>
+  <a href="#loi">7. Xử lý lỗi thường gặp</a>
+</nav>
+
+<main>
+  <div class="hero">
+    <h1>FLOWBOARD</h1>
+    <p>Hướng dẫn cài đặt &amp; sử dụng chi tiết</p>
+    <div class="badges">
+      <span class="badge">Local-only</span>
+      <span class="badge">Google Flow Pro/Ultra</span>
+      <span class="badge">Chrome MV3</span>
+      <span class="badge">React + FastAPI</span>
+    </div>
+    <p style="margin-top:14px; color:var(--fg);">Tác giả: <b>Quốc Bảo</b> — <span style="color:var(--accent);">Handora Team</span></p>
+  </div>
+
+  <!-- 1 -->
+  <h2 class="sec" id="gioithieu">1. Giới thiệu</h2>
+  <p>Flowboard là một <b>workspace canvas vô hạn</b> chạy ngay trên máy bạn, dùng để dựng các quy trình tạo ảnh/video bằng AI dưới dạng các <b>node nối với nhau</b>. Mỗi lệnh tạo ảnh/video được gửi qua một <b>extension Chrome</b> tới <b>Google Flow</b> (Veo 3.1 &amp; GemPix 2), dùng chính tài khoản Flow của bạn.</p>
+  <p>Mỗi người dùng một bản riêng trên máy mình và đăng nhập tài khoản Flow riêng — board và ảnh của ai nằm trên máy người đó.</p>
+
+  <!-- 2 -->
+  <h2 class="sec" id="yeucau">2. Yêu cầu hệ thống</h2>
+  <table>
+    <tr><th>Thành phần</th><th>Yêu cầu</th><th>Vì sao cần</th></tr>
+    <tr><td>Hệ điều hành</td><td>Windows + <b>WSL2 (Ubuntu)</b>, hoặc Linux/macOS</td><td>Môi trường chạy agent + frontend</td></tr>
+    <tr><td>Python</td><td>3.11+</td><td>Chạy agent (FastAPI)</td></tr>
+    <tr><td>Node.js</td><td>20+</td><td>Chạy frontend (Vite)</td></tr>
+    <tr><td>Chrome / Chromium</td><td>bản mới</td><td>Chứa extension proxy lệnh Flow</td></tr>
+    <tr><td><b>Google Flow</b></td><td>gói <b>Pro</b> hoặc <b>Ultra</b></td><td>Bắt buộc — gói free KHÔNG chạy được</td></tr>
+    <tr><td>LLM CLI</td><td><code>claude</code> (khuyên dùng), hoặc <code>gemini</code> / <code>codex</code></td><td>Auto-prompt, vision, Assistant</td></tr>
+  </table>
+  <div class="warn">⚠️ <b>Quan trọng:</b> tài khoản Flow phải là gói trả phí Pro hoặc Ultra. Kiểm tra tại <a href="https://labs.google/fx/tools/flow">labs.google/fx/tools/flow</a> trước khi cài.</div>
+
+  <!-- 3 -->
+  <h2 class="sec" id="caidat">3. Cài đặt</h2>
+
+  <div class="step">
+    <span class="num">1</span><b>Clone mã nguồn</b>
+    <p>Mở terminal Ubuntu (WSL) và chạy:</p>
+    <pre><code>git clone https://github.com/quocbao1772003-spec/FLOW-BY-QB.git
+cd FLOW-BY-QB
+make install</code></pre>
+    <p>Lệnh <code>make install</code> tự tạo môi trường Python cho agent và cài thư viện cho frontend (mất vài phút). Khi clone repo private, git sẽ hỏi <b>username GitHub</b> và <b>Personal Access Token</b> của bạn.</p>
+  </div>
+
+  <h3 id="extension">3.1 Load Chrome extension</h3>
+  <div class="step">
+    <span class="num">2</span><b>Nạp extension vào Chrome</b>
+    <ol>
+      <li>Mở Chrome, vào <code>chrome://extensions</code></li>
+      <li>Bật <b>Developer mode</b> (góc trên phải)</li>
+      <li>Bấm <b>Load unpacked</b> → chọn thư mục <code>extension/</code> trong repo</li>
+      <li>Mở tab <a href="https://labs.google/fx/tools/flow">labs.google/fx/tools/flow</a> và <b>đăng nhập tài khoản Flow của bạn</b></li>
+      <li>Icon extension sẽ chuyển màu khi bắt được phiên Flow (~5 giây)</li>
+    </ol>
+  </div>
+
+  <h3 id="chay">3.2 Chạy app</h3>
+  <div class="step">
+    <span class="num">3</span><b>Khởi động agent &amp; frontend</b>
+    <p>Mở <b>2 terminal riêng</b>:</p>
+    <pre><code># Terminal 1 — backend
+make agent      # chạy FastAPI ở cổng 8101
+
+# Terminal 2 — frontend
+make frontend   # chạy Vite ở cổng 5173</code></pre>
+    <p>Sau đó mở trình duyệt vào <code>http://localhost:5173</code>.</p>
+  </div>
+  <div class="note">💡 Kiểm tra agent đã chạy đúng: dòng trạng thái phía trên canvas hiển thị <span class="pill">● agent</span> <span class="pill">● extension</span> màu xanh.</div>
+
+  <!-- 4 -->
+  <h2 class="sec" id="sudung">4. Sử dụng</h2>
+
+  <h3 id="sidebar">4.1 Sidebar &amp; 3 trang chính</h3>
+  <p>Thanh bên trái có thể <b>thu gọn</b> (bấm nút panel cạnh logo). Ba trang:</p>
+  <ul>
+    <li><b>Flows</b> — thư viện tất cả flow (board). Bấm card để mở, nút <b>+ New flow</b> tạo flow mới, hover card hiện nút xóa.</li>
+    <li><b>Image Gen</b> — tạo ảnh lẻ không cần canvas (xem mục 4.7).</li>
+    <li><b>Library</b> — xem lại toàn bộ ảnh/video đã tạo (xem mục 4.8).</li>
+  </ul>
+  <p>Bấm logo <b>Flowboard</b> để quay về canvas.</p>
+
+  <h3 id="node">4.2 Node trên canvas</h3>
+  <p>Thêm node: bấm nút <b>+</b> ở toolbar trái → chọn loại (Text, Image, Video, Storyboard, Visual asset, Assistant…), hoặc <b>chuột phải</b> lên canvas để mở menu nhanh.</p>
+  <table>
+    <tr><th>Loại node</th><th>Công dụng</th></tr>
+    <tr><td><b>Image</b></td><td>Tạo ảnh. Nhập prompt trực tiếp trên card, chọn số biến thể (x1–x4), model, tỷ lệ. Bấm <b>▶</b> để tạo ngay. Khung node tự khớp tỷ lệ ảnh.</td></tr>
+    <tr><td><b>Video</b></td><td>Tạo video từ ảnh (image-to-video) qua Veo.</td></tr>
+    <tr><td><b>Storyboard</b></td><td>Nhiều cảnh (shot) trong một node.</td></tr>
+    <tr><td><b>Character / Visual asset</b></td><td>Ảnh tham chiếu — upload hoặc generate, dùng làm nguồn cho node khác.</td></tr>
+    <tr><td><b>Assistant</b></td><td>Chạy mô hình ngôn ngữ (Claude/Gemini) tự do để soạn nội dung.</td></tr>
+    <tr><td><b>Text / Note</b></td><td>Ghi chú, prompt mồi.</td></tr>
+  </table>
+  <p><b>Nối node:</b> kéo từ ô vuông cạnh node này thả vào ô vuông node kia → tạo đường nối (reference).</p>
+  <p><b>Cắt kết nối:</b> bấm vào một đường nối → hiện nút <b>✂</b> ở giữa → bấm để ngắt.</p>
+  <p><b>Đổi ảnh:</b> nút <b>⇄ Replace</b> ở góc dưới ảnh để upload ảnh khác thay tại chỗ.</p>
+
+  <h3 id="tagref">4.3 Tag node &amp; reference trong prompt</h3>
+  <p>Khi nhập prompt trên node Image hoặc Assistant, gõ <code>@</code> để mở danh sách → chọn node muốn tham chiếu. Hệ thống sẽ tự nối node đó làm nguồn và chèn thẻ <code>@Tên #id</code> được tô màu. Ảnh/nội dung của node được tag sẽ được đưa vào làm cơ sở khi generate.</p>
+
+  <h3 id="runflow">4.4 Chạy pipeline (Run from here)</h3>
+  <p>Chọn một node → trên thanh công cụ nổi của node có nút <b>▶▶</b> với 2 lựa chọn:</p>
+  <ul>
+    <li><b>This node only</b> — chỉ chạy đúng node đó.</li>
+    <li><b>Run from here</b> — chạy node đó rồi <b>lan xuống toàn bộ node phía sau theo thứ tự</b>. Node sau sẽ <b>đợi node trước tạo xong</b>, lấy ảnh/text vừa tạo làm đầu vào, rồi mới chạy. Nếu một node lỗi, cả chuỗi dừng lại.</li>
+  </ul>
+  <div class="note">Khi pipeline đang chạy, các đường nối tới node đang xử lý sẽ <b>chạy sáng màu xanh</b> để báo hiệu.</div>
+
+  <h3 id="group">4.5 Group node</h3>
+  <p>Quét chọn nhiều node (kéo khung chọn, hoặc <kbd>Shift</kbd>+click) → toolbar nổi có nút <b>Group</b> để gộp thành một khung. Khi chọn khung group, toolbar riêng cho phép:</p>
+  <ul>
+    <li><b>Đổi màu nền</b> khung</li>
+    <li><b>Ungroup</b> — tách nhóm (node giữ nguyên)</li>
+    <li><b>Arrange</b> — sắp xếp node bên trong: Dọc / Ngang / Lưới</li>
+    <li><b>Lock</b> — khóa, không kéo được node trong nhóm</li>
+    <li><b>Duplicate</b> — nhân bản cả nhóm</li>
+    <li><b>Download</b> — tải <b>toàn bộ ảnh trong nhóm</b>, mỗi ảnh một file riêng</li>
+    <li><b>Delete</b> — xóa nhóm và toàn bộ node bên trong</li>
+  </ul>
+  <p>Kéo khung group = di chuyển tất cả node bên trong cùng lúc.</p>
+
+  <h3 id="editor">4.6 Image Editor</h3>
+  <p>Mở từ nút <b>✎</b> trên toolbar node ảnh, hoặc nút <b>AI edit / Crop &amp; Flip</b> trong cửa sổ xem kết quả.</p>
+  <ul>
+    <li><b>AI edit</b> — nhập mô tả thay đổi → AI sửa ảnh.</li>
+    <li><b>Crop &amp; Flip</b> — cắt theo tỷ lệ định sẵn (1:1, 9:16, 16:9…), lật ngang/dọc, có lưới 1/3 và 8 điểm kéo.</li>
+  </ul>
+  <p>Trong cửa sổ xem kết quả: <b>lăn chuột để phóng to/thu nhỏ ảnh</b>, kéo để di chuyển, double-click để reset. Bốn nút: AI edit · Crop &amp; Flip · Download · Re-generate (tạo lại).</p>
+
+  <h3 id="imagegen">4.7 Trang Image Gen (tạo ảnh lẻ)</h3>
+  <p>Tạo ảnh nhanh không cần dựng canvas:</p>
+  <ol>
+    <li>Mục <b>REFERENCES</b>: bấm <b>+ Add</b> để upload ảnh tham chiếu (tối đa 4).</li>
+    <li>Nhập <b>PROMPT</b>, gõ <code>@</code> để tag ảnh tham chiếu vừa upload.</li>
+    <li>Chọn số biến thể và tỷ lệ → bấm <b>Generate</b> (hoặc <kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</li>
+    <li>Kết quả hiện ở khung phải theo thời gian thực, bấm ảnh để mở xem chi tiết.</li>
+  </ol>
+
+  <h3 id="library">4.8 Trang Library</h3>
+  <p>Hiển thị <b>toàn bộ ảnh &amp; video đã tạo</b> từ mọi flow và từ Image Gen. Có bộ lọc <b>All / Images / Videos</b>, hover vào ảnh để hiện nút tải về, nút refresh để cập nhật.</p>
+
+  <!-- 5 -->
+  <h2 class="sec" id="phimtat">5. Phím tắt</h2>
+  <table>
+    <tr><th>Phím</th><th>Chức năng</th></tr>
+    <tr><td><kbd>V</kbd></td><td>Công cụ Chọn (Select)</td></tr>
+    <tr><td><kbd>H</kbd></td><td>Công cụ Kéo canvas (Hand)</td></tr>
+    <tr><td><kbd>Space</kbd> (giữ)</td><td>Tạm thời chuyển sang chế độ kéo canvas</td></tr>
+    <tr><td><kbd>G</kbd></td><td>Group các node đang chọn</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Nhân bản node đang chọn</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Zoom vừa khung (Fit)</td></tr>
+    <tr><td><kbd>0</kbd></td><td>Đặt zoom về 100%</td></tr>
+    <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Xóa node / đường nối đang chọn</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Generate / chạy (trong ô prompt)</td></tr>
+  </table>
+
+  <!-- 6 -->
+  <h2 class="sec" id="capnhat">6. Cập nhật app khi có bản mới</h2>
+  <p>Khi quản trị repo đẩy bản cập nhật lên GitHub, chỉ cần một lệnh:</p>
+  <pre><code>cd FLOW-BY-QB
+make upgrade</code></pre>
+  <p>Script sẽ tự: tải code mới (<code>git pull</code>) → cài lại thư viện nếu có thay đổi → nhắc reload extension nếu cần. <b>Dữ liệu của bạn (board, ảnh) không bị mất</b> vì được lưu riêng và không nằm trong git.</p>
+  <p>Sau khi cập nhật xong, <b>khởi động lại</b> <code>make agent</code> và <code>make frontend</code>, rồi tải lại trình duyệt bằng <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>.</p>
+  <div class="warn">Nếu <code>make upgrade</code> báo "uncommitted local changes" → bạn đã lỡ sửa code. Chạy <code>git stash</code> để cất tạm rồi <code>make upgrade</code> lại.</div>
+
+  <!-- 7 -->
+  <h2 class="sec" id="loi">7. Xử lý lỗi thường gặp</h2>
+
+  <h4>Nút ▶ Generate không có phản hồi</h4>
+  <p>Kiểm tra: (1) đã load extension chưa, (2) tab <code>labs.google/fx/tools/flow</code> còn mở và đã đăng nhập chưa, (3) dòng trạng thái có <span class="pill">● extension</span> xanh không. Mở lại tab Flow để extension bắt lại phiên.</p>
+
+  <h4>"Open Flow once so the extension can detect your plan"</h4>
+  <p>Extension chưa nhận diện được gói tài khoản. Mở/refresh tab Flow một lần, đợi vài giây rồi thử lại.</p>
+
+  <h4>Ảnh tải lên chậm</h4>
+  <p>Ảnh được tự động nén về tối đa 2048px trước khi gửi. Nếu vẫn chậm là do tốc độ mạng upload tới Google Flow — nằm ngoài tầm kiểm soát của app.</p>
+
+  <h4>Agent không chạy / cổng 8101 bận</h4>
+  <p>Đảm bảo không có tiến trình cũ đang chiếm cổng. Dừng (<kbd>Ctrl</kbd>+<kbd>C</kbd>) rồi chạy lại <code>make agent</code>.</p>
+
+  <h4>Giao diện không cập nhật sau khi pull</h4>
+  <p>Hard-refresh trình duyệt: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>. Nếu sửa extension thì phải vào <code>chrome://extensions</code> bấm <b>↻ Reload</b>.</p>
+
+  <div class="danger">🔒 <b>Bảo mật:</b> không chia sẻ Personal Access Token GitHub hay tài khoản Flow của bạn cho người khác. Mỗi người dùng tài khoản riêng.</div>
+
+  <footer>
+    Flowboard — Hướng dẫn cài đặt &amp; sử dụng · Local-only, single-user · Cần Google Flow Pro/Ultra<br/>
+    © Quốc Bảo — Handora Team
+  </footer>
+</main>
+</div>
+</body>
+</html>
