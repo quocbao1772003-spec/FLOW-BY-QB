@@ -65,6 +65,12 @@ interface Props {
   style?: CSSProperties;
   onMention?: (nodeId: string, isConnected: boolean) => void;
   onKeyDownPassthrough?: (e: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
+  /** Plain mode: render the textarea text directly (visible), skip the
+   *  transparent-text + highlight-mirror overlay. The overlay drifts when
+   *  the field lives inside a CSS-scaled container (ReactFlow canvas),
+   *  causing cursor jumps + selection misalignment — plain mode avoids
+   *  that. The @-mention dropdown still works. */
+  plain?: boolean;
 }
 
 /** Token grammar — matches what's INSERTED into the textarea after a
@@ -101,6 +107,7 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       style,
       onMention,
       onKeyDownPassthrough,
+      plain = false,
     },
     ref,
   ) {
@@ -415,33 +422,35 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
             CRITICAL: this div MUST inherit textarea's exact font-metrics
             (line-height, font-size, padding, wrap mode) for caret
             position alignment. */}
-        <div
-          ref={mirrorRef}
-          aria-hidden="true"
-          style={{
-            ...sharedFieldCss,
-            position: "absolute",
-            inset: 0,
-            color: "#e4e7ec",
-            background: "#0f1115",
-            border: "1px solid #2a2e38",
-            pointerEvents: "none",
-            overflow: "hidden",
-            // The textarea naturally wraps; mirror does too via
-            // word-wrap. Force the same wrap as the textarea.
-            wordBreak: "break-word",
-          }}
-        >
-          {renderHighlightedContent(value)}
-        </div>
+        {/* Highlight mirror — skipped in plain mode (the overlay drifts
+            under CSS scale, e.g. inside the ReactFlow canvas). */}
+        {!plain && (
+          <div
+            ref={mirrorRef}
+            aria-hidden="true"
+            style={{
+              ...sharedFieldCss,
+              position: "absolute",
+              inset: 0,
+              color: "#e4e7ec",
+              background: "#0f1115",
+              border: "1px solid #2a2e38",
+              pointerEvents: "none",
+              overflow: "hidden",
+              wordBreak: "break-word",
+            }}
+          >
+            {renderHighlightedContent(value)}
+          </div>
+        )}
 
-        {/* Real textarea — transparent text so only the caret + selection
-            show through. Mirror behind paints the visible characters. */}
+        {/* Real textarea. Default: transparent text over the mirror.
+            Plain mode: visible text, no mirror — robust under scale. */}
         <textarea
           ref={textareaRef}
           value={value}
           onChange={handleChange}
-          onScroll={syncMirrorScroll}
+          onScroll={plain ? undefined : syncMirrorScroll}
           onKeyDown={handleKeyDown}
           onFocus={updatePopPos}
           placeholder={placeholder}
@@ -455,10 +464,10 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
             display: "block",
             width: "100%",
             height: "100%",
-            color: "transparent",
-            background: "transparent",
+            color: plain ? "#e4e7ec" : "transparent",
+            background: plain ? "#0f1115" : "transparent",
             caretColor: "#e4e7ec",
-            border: "1px solid transparent",
+            border: plain ? "1px solid #2a2e38" : "1px solid transparent",
             resize: "none",
             outline: "none",
             // Match the mirror wrap.

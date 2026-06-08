@@ -2038,6 +2038,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                     : "Describe the image — gõ @ để tag node…"
                 }
                 rows={3}
+                plain
                 className="node-genprompt-editor nodrag nowheel"
               />
             </div>
