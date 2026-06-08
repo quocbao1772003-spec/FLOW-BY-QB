@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { autoPrompt, autoPromptBatch, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
+import { mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
 import {
@@ -299,6 +299,31 @@ function saveTileToLibrary(opts: {
     source_node_short_id:
       typeof data.shortId === "string" ? data.shortId : null,
   });
+}
+
+// Resolve the prompt an Image node should generate with. Priority:
+//   1. The node's own typed prompt.
+//   2. Text from a connected Assistant (assistantResponse) / Prompt / Note.
+// Returns null when no prompt source exists — the caller blocks gen.
+export function resolveImagePrompt(rfId: string, ownPrompt: string): string | null {
+  const own = (ownPrompt ?? "").trim();
+  if (own) return own;
+  const { nodes, edges } = useBoardStore.getState();
+  const upstream = edges
+    .filter((e) => e.target === rfId)
+    .map((e) => nodes.find((n) => n.id === e.source))
+    .filter((n): n is NonNullable<typeof n> => Boolean(n));
+  for (const n of upstream) {
+    if (n.data.type === "assistant") {
+      const r = (n.data.assistantResponse as string | undefined)?.trim();
+      if (r) return r;
+    }
+    if (n.data.type === "prompt" || n.data.type === "note") {
+      const p = (n.data.prompt as string | undefined)?.trim();
+      if (p) return p;
+    }
+  }
+  return null;
 }
 
 const MAX_IMG_RETRIES = 5;
@@ -1832,53 +1857,29 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   // to the dialog when there's no prompt yet (nothing to dispatch), or
   // for Storyboard / video nodes whose dispatch needs the dialog's extra
   // wiring (composite templates, source-variant selection).
-  async function handleRunNow(e: React.MouseEvent) {
+  function handleRunNow(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy || isRunning) return;
-    // Image nodes always dispatch directly — no popup. If the prompt is
-    // empty, auto-synthesise one from upstream refs first (same backend
-    // the dialog used), then generate.
     if (data.type !== "image") {
       handleGenerate(e);
       return;
     }
-    const gen = useGenerationStore.getState();
-    const aspectRatio = data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE";
-    let prompt = (data.prompt ?? "").trim();
-    let prompts: string[] | undefined;
-
+    // Image node only generates with a REAL prompt: typed in its own box,
+    // or supplied by a connected Assistant / Prompt / Note node. No prompt
+    // source → block (no vision auto-synth).
+    const prompt = resolveImagePrompt(props.id, data.prompt ?? "");
     if (!prompt) {
-      const dbId = parseInt(props.id, 10);
-      if (isNaN(dbId)) return;
-      useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
-      try {
-        if (variantCount > 1) {
-          const res = await autoPromptBatch(dbId, variantCount);
-          prompts = res.prompts;
-          prompt = res.prompts[0] ?? "";
-        } else {
-          const res = await autoPrompt(dbId);
-          prompt = res.prompt;
-        }
-        useBoardStore.getState().updateNodeData(props.id, {
-          prompt,
-          autoPromptStatus: undefined,
-        });
-      } catch (err) {
-        useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "failed" });
-        useGenerationStore.setState({
-          error: err instanceof Error ? `Auto-prompt failed: ${err.message}` : "Auto-prompt failed",
-        });
-        return;
-      }
+      useGenerationStore.setState({
+        error:
+          "Node ảnh cần prompt: nhập vào ô prompt của node, hoặc nối với một node Assistant / Text / Note.",
+      });
+      return;
     }
-
-    void gen.dispatchGeneration(props.id, {
+    void useGenerationStore.getState().dispatchGeneration(props.id, {
       prompt,
       kind: "image",
-      aspectRatio,
+      aspectRatio: data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE",
       variantCount,
-      prompts,
     });
   }
 
