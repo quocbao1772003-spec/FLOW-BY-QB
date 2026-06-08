@@ -479,6 +479,28 @@ export function listAssets(kind?: "image" | "video", limit = 500): Promise<Asset
   return api<AssetItem[]>(`/api/assets?${params.toString()}`);
 }
 
+// ── Upscale (Flow upsampleImage → 2K / 4K) ─────────────────────────────────
+
+export interface UpscaleResponse {
+  media_id: string;
+  resolution: "2K" | "4K";
+}
+
+export function upscaleImage(
+  mediaId: string,
+  projectId: string,
+  resolution: "2K" | "4K",
+): Promise<UpscaleResponse> {
+  return api<UpscaleResponse>("/api/upscale", {
+    method: "POST",
+    body: JSON.stringify({
+      media_id: mediaId,
+      project_id: projectId,
+      resolution,
+    }),
+  });
+}
+
 export function mediaUrl(mediaId: string): string {
   const clean = mediaId.replace(/^media\//, "");
   return `/media/${encodeURIComponent(clean)}`;

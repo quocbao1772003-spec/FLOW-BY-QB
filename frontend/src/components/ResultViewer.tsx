@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useGenerationStore } from "../store/generation";
 import { useBoardStore } from "../store/board";
 import { useSettingsStore } from "../store/settings";
-import { getMediaStatus, mediaUrl, type MediaStatus } from "../api/client";
+import { getMediaStatus, mediaUrl, upscaleImage, type MediaStatus } from "../api/client";
 import { ImageEditModal } from "./ImageEditModal";
 import { countryLabel, vibeLabel } from "../constants/character";
 import {
@@ -11,6 +11,7 @@ import {
   IconCrop,
   IconDownload,
   IconRefresh,
+  IconSpinner,
 } from "../canvas/icons";
 
 // Friendly labels for the metadata grid's `model` row. Keys match what
@@ -98,6 +99,8 @@ export function ResultViewer() {
   // Image editor (AI edit / Crop & Flip) — opens the full ImageEditModal
   // over the viewer with the chosen tool tab.
   const [editorTool, setEditorTool] = useState<null | "prompt" | "crop">(null);
+  // Upscale state (Flow upsampleImage → 2K / 4K).
+  const [upscaling, setUpscaling] = useState<null | "2K" | "4K">(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -437,6 +440,48 @@ export function ResultViewer() {
     a.remove();
   }
 
+  async function handleUpscale(resolution: "2K" | "4K") {
+    if (!rfId || !data || !currentMediaId || upscaling) return;
+    const projectId = await useGenerationStore.getState().ensureProjectId();
+    if (!projectId) {
+      useGenerationStore.setState({ error: "Flow project chưa sẵn sàng." });
+      return;
+    }
+    setUpscaling(resolution);
+    try {
+      const res = await upscaleImage(currentMediaId, projectId, resolution);
+      // Replace this variant's media with the upscaled one, in place.
+      const ids = (data.mediaIds ?? (data.mediaId ? [data.mediaId] : [])).slice();
+      if (data.mediaIds !== undefined) {
+        ids[activeIdx] = res.media_id;
+        useBoardStore.getState().updateNodeData(rfId, { mediaIds: ids });
+      } else {
+        useBoardStore.getState().updateNodeData(rfId, { mediaId: res.media_id });
+      }
+      const dbId = parseInt(rfId, 10);
+      if (!isNaN(dbId)) {
+        const { patchNode } = await import("../api/client");
+        patchNode(dbId, {
+          data:
+            data.mediaIds !== undefined
+              ? { mediaIds: ids }
+              : { mediaId: res.media_id },
+        }).catch(() => {});
+      }
+      setCacheKey((k) => k + 1);
+      setMediaReady(false);
+    } catch (err) {
+      useGenerationStore.setState({
+        error:
+          err instanceof Error
+            ? `Upscale ${resolution} thất bại: ${err.message}`
+            : `Upscale ${resolution} thất bại`,
+      });
+    } finally {
+      setUpscaling(null);
+    }
+  }
+
   return (
     <div
       className="result-viewer-backdrop"
@@ -752,6 +797,28 @@ export function ResultViewer() {
             >
               <IconCrop size={13} /> Crop & Flip
             </button>
+            {!isVideo && (
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  className="result-viewer__btn"
+                  style={{ flex: 1 }}
+                  onClick={() => void handleUpscale("2K")}
+                  disabled={!currentMediaId || upscaling !== null}
+                  title="Tăng độ phân giải lên 2K"
+                >
+                  {upscaling === "2K" ? <IconSpinner size={13} /> : "⤢"} 2K
+                </button>
+                <button
+                  className="result-viewer__btn"
+                  style={{ flex: 1 }}
+                  onClick={() => void handleUpscale("4K")}
+                  disabled={!currentMediaId || upscaling !== null}
+                  title="Tăng độ phân giải lên 4K (có thể cần gói Ultra)"
+                >
+                  {upscaling === "4K" ? <IconSpinner size={13} /> : "⤢"} 4K
+                </button>
+              </div>
+            )}
             <button
               className="result-viewer__btn"
               onClick={handleDownload}

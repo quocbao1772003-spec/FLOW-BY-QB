@@ -33,6 +33,14 @@ VIDEO_I2V_URL = f"{FLOW_API_BASE}/v1/video:batchAsyncGenerateVideoStartImage"
 VIDEO_OMNI_URL = f"{FLOW_API_BASE}/v1/video:batchAsyncGenerateVideoReferenceImages"
 VIDEO_POLL_URL = f"{FLOW_API_BASE}/v1/video:batchCheckAsyncVideoGenerationStatus"
 UPLOAD_IMAGE_URL = f"{FLOW_API_BASE}/v1/flow/uploadImage"
+UPSAMPLE_IMAGE_URL = f"{FLOW_API_BASE}/v1/flow/upsampleImage"
+
+# Upscale target-resolution enums Flow accepts. 4K is gated to Ultra in
+# the UI ("Nâng cấp"); 2K works on Pro.
+UPSAMPLE_RESOLUTIONS = {
+    "2K": "UPSAMPLE_IMAGE_RESOLUTION_2K",
+    "4K": "UPSAMPLE_IMAGE_RESOLUTION_4K",
+}
 
 
 # Omni Flash — variable-duration r2v video model. Each duration maps to a
@@ -996,6 +1004,81 @@ class FlowSDK:
             )
             return {"raw": resp, "error": "no_media_id_in_upload_response"}
         return {"raw": resp, "media_id": media_id}
+
+    # ── image upscale (upsampleImage) ──────────────────────────────────────
+    async def upsample_image(
+        self,
+        media_id: str,
+        project_id: str,
+        target_resolution: str = "2K",
+        paygate_tier: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Upscale an existing image to 2K / 4K via Flow's upsampleImage.
+
+        Synchronous round-trip (~10 s) — returns the upscaled image's new
+        media_id directly (no async polling). ``target_resolution`` is the
+        short form ("2K" / "4K"); mapped to Flow's enum here.
+
+        Returns ``{raw, media_id}`` on success or ``{raw, error}`` on
+        failure. 4K may be rejected on a Pro account (Ultra-gated).
+        """
+        if paygate_tier is None:
+            raise ValueError("paygate_tier is required")
+        enum = UPSAMPLE_RESOLUTIONS.get(target_resolution.upper())
+        if enum is None:
+            return {"raw": None, "error": f"bad target_resolution: {target_resolution!r}"}
+        ctx = _client_context(project_id, paygate_tier)
+        body = {
+            "mediaId": media_id,
+            "targetResolution": enum,
+            "clientContext": ctx,
+        }
+        resp = await self._client.api_request(
+            url=UPSAMPLE_IMAGE_URL,
+            method="POST",
+            headers=dict(_API_HEADERS),
+            body=body,
+            captcha_action=CAPTCHA_IMAGE,
+        )
+        if isinstance(resp, dict) and resp.get("error"):
+            return {"raw": resp, "error": resp["error"]}
+        inner_err = _extract_inner_api_error(resp)
+        if inner_err:
+            return {"raw": resp, "error": inner_err}
+
+        new_id = _extract_upsampled_media_id(resp)
+        if new_id is None:
+            logger.error(
+                "upsample_image: no media_id in response (project_id=%s, "
+                "src=%s, res=%s) — raw=%r",
+                project_id, media_id, target_resolution, resp,
+            )
+            return {"raw": resp, "error": "no_media_id_in_upsample_response"}
+        return {"raw": resp, "media_id": new_id}
+
+
+def _extract_upsampled_media_id(resp: Any) -> Optional[str]:
+    """upsampleImage returns the new media — handle the common shapes:
+    ``data.media.name``, ``data.media.mediaId``, or a media entry list."""
+    if not isinstance(resp, dict):
+        return None
+    data = resp.get("data")
+    if not isinstance(data, dict):
+        return None
+    media = data.get("media")
+    if isinstance(media, dict):
+        for k in ("name", "mediaId", "id"):
+            v = media.get(k)
+            if isinstance(v, str) and v:
+                return v
+    # Fallback: reuse the batchGenerateImages entry extractor.
+    try:
+        entries = extract_media_entries(resp)
+        if entries:
+            return entries[0].get("media_id")
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 def _extract_project_id(resp: Any) -> Optional[str]:
