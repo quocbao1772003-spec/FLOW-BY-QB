@@ -128,9 +128,11 @@ Sau đó restart `make agent` + `make frontend` và hard-refresh trình duyệt 
 - App là **local-only, single-user**: mỗi người chạy bản riêng trên máy mình, đăng nhập tài khoản Flow riêng. Board/ảnh nằm trên máy người đó.
 - Không gọi API LLM cloud trực tiếp — auto-prompt/vision/assistant shell ra CLI dùng subscription của bạn.
 
-## Tác giả
+## Tác giả & hỗ trợ
 
 **Quốc Bảo** — Handora Team.
+
+Gặp lỗi, cần hỗ trợ hoặc muốn nhận thông báo bản cập nhật → liên hệ Telegram: **[@BAONGUYENQUOC1707](https://t.me/BAONGUYENQUOC1707)**
 
 ## License
 
