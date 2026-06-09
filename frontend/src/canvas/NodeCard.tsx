@@ -301,6 +301,30 @@ function saveTileToLibrary(opts: {
   });
 }
 
+// Render a prompt string with @-mention tokens (`@Name #shortId`) shown
+// as colored pills. Used in the node's read-only prompt display so tags
+// stay highlighted while the editable textarea stays plain (the highlight
+// overlay drifts under canvas scale, so we only colorize the static view).
+const PROMPT_TAG_RE = /@[^@\n#]+?\s?#[A-Za-z0-9_-]+/g;
+function renderPromptWithTags(text: string): React.ReactNode {
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  PROMPT_TAG_RE.lastIndex = 0;
+  let i = 0;
+  while ((m = PROMPT_TAG_RE.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      <span key={`t${i++}`} className="prompt-tag-pill">
+        {m[0]}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 // Resolve the prompt an Image node should generate with. Priority:
 //   1. The node's own typed prompt.
 //   2. Text from a connected Assistant (assistantResponse) / Prompt / Note.
@@ -2050,10 +2074,11 @@ export function NodeCard(props: NodeProps<FlowNode>) {
               role="button"
               tabIndex={0}
             >
-              {data.prompt?.trim() ||
-                (isVideoGen
+              {data.prompt?.trim()
+                ? renderPromptWithTags(data.prompt)
+                : isVideoGen
                   ? "Describe the video you want to generate…"
-                  : "Describe the image you want to generate…")}
+                  : "Describe the image you want to generate…"}
             </div>
           )
         )}
