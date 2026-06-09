@@ -648,6 +648,10 @@ function MentionRow({
 }) {
   return (
     <div
+      // Keep the textarea focused — mousedown default would blur it,
+      // which (in the inline node editor) closes the editor before the
+      // tag is inserted. preventDefault keeps focus so the click inserts.
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       onMouseEnter={onHover}
       role="option"
