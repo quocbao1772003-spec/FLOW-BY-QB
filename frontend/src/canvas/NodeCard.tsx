@@ -1738,7 +1738,9 @@ function ImageInputHandles({ rfId, data }: { rfId: string; data: FlowboardNodeDa
     <div className="image-inputs">
       {Array.from({ length: count }, (_, i) => (
         <div className="image-input-slot" key={i}>
-          <span className="image-input-slot__label">Image {i + 1}</span>
+          <span className="image-input-slot__label">
+            Image <span className="image-input-slot__num">{i + 1}</span>
+          </span>
           <Handle
             type="target"
             position={Position.Left}

@@ -2168,10 +2168,21 @@ button:disabled {
 }
 .image-input-slot__label {
   font-size: 10px;
-  font-weight: 600;
-  color: var(--fg-3, #aaa);
+  font-weight: 700;
+  color: var(--fg-1, #e3e3e3);
   white-space: nowrap;
   user-select: none;
+  /* Solid chip so the dashed edge line behind it doesn't make the text
+     unreadable; sits above the edges. */
+  background: var(--surface-2, #2b2b2b);
+  border: 1px solid var(--border-alpha-1, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  padding: 2px 8px;
+  position: relative;
+  z-index: 3;
+}
+.image-input-slot__num {
+  color: var(--accent-0, #3b82f6);
 }
 /* Override the handle's absolute centering so each one sits at its row. */
 .image-inputs .image-input-handle {
