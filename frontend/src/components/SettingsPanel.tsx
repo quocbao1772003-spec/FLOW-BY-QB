@@ -5,11 +5,6 @@ import {
   type ImageModelKey,
   type VideoQuality,
 } from "../store/settings";
-import { getLatestRelease, isNewerVersion, type LatestRelease } from "../api/github";
-import packageJson from "../../package.json";
-
-const APP_VERSION: string = packageJson.version;
-const COMMUNITY_URL = "https://www.facebook.com/groups/flowkit.flowboard.community";
 
 /**
  * Dashboard Settings popover anchored to the AccountPanel gear button.
@@ -107,23 +102,6 @@ export function SettingsPanel({ open, onClose, onLogout, logoutPending }: Settin
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-
-  // Check GitHub for a newer release. Cached in sessionStorage by
-  // the helper, so re-opening the dialog doesn't burn API quota.
-  const [latestRelease, setLatestRelease] = useState<LatestRelease | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    getLatestRelease().then((r) => {
-      if (alive) setLatestRelease(r);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [open]);
-  const updateAvailable =
-    !!latestRelease?.tagName &&
-    isNewerVersion(latestRelease.tagName, APP_VERSION);
 
   if (!open) return null;
 
@@ -254,38 +232,6 @@ export function SettingsPanel({ open, onClose, onLogout, logoutPending }: Settin
               </div>
             </label>
           ))}
-        </div>
-      </div>
-
-      <div className="settings-panel__section">
-        <div className="settings-panel__label">About</div>
-        <div className="settings-panel__about-row">
-          <span className="settings-panel__about-key">Version</span>
-          <span className="settings-panel__about-value">
-            <code>v{APP_VERSION}</code>
-            {updateAvailable && latestRelease && (
-              <a
-                className="settings-panel__update-badge"
-                href={latestRelease.htmlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`Latest: ${latestRelease.tagName}`}
-              >
-                New version {latestRelease.tagName} →
-              </a>
-            )}
-          </span>
-        </div>
-        <div className="settings-panel__about-row">
-          <span className="settings-panel__about-key">Community</span>
-          <a
-            className="settings-panel__about-link"
-            href={COMMUNITY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            FlowKit & Flowboard on Facebook →
-          </a>
         </div>
       </div>
 
