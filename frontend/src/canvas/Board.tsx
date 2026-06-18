@@ -604,6 +604,76 @@ export function Board() {
     }
   }, []);
 
+  // Shared upload pipeline: upload image File[]s and drop a visual_asset
+  // node per file at the given screen point. Used by drag-drop AND
+  // clipboard paste (Ctrl+V).
+  const uploadImagesAt = useCallback(
+    async (imageFiles: File[], clientX: number, clientY: number) => {
+      const boardId = useBoardStore.getState().boardId;
+      if (boardId === null) return;
+      const baseFlowPos = screenToFlowPosition({ x: clientX, y: clientY });
+      const uploadIds = imageFiles.map(
+        (_, i) => `paste-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+      );
+      setActiveUploads((prev) => [
+        ...prev,
+        ...imageFiles.map((f, i) => ({
+          id: uploadIds[i],
+          x: clientX,
+          y: clientY + i * 28,
+          filename: f.name || "Pasted image",
+          done: false,
+        })),
+      ]);
+      const flowProjectId = await getProjectIdFor(boardId).catch(() => null);
+      if (!flowProjectId) {
+        setActiveUploads((prev) =>
+          prev.map((u) =>
+            uploadIds.includes(u.id) ? { ...u, done: true, error: "No Flow project" } : u,
+          ),
+        );
+        window.setTimeout(() => {
+          setActiveUploads((prev) => prev.filter((u) => !uploadIds.includes(u.id)));
+        }, 2000);
+        return;
+      }
+      await Promise.all(
+        imageFiles.map(async (file, i) => {
+          const uploadId = uploadIds[i];
+          const pos = { x: baseFlowPos.x + i * 40, y: baseFlowPos.y + i * 40 };
+          try {
+            const uploaded = await uploadImage(file, flowProjectId);
+            await useBoardStore.getState().addReferenceNode(
+              {
+                mediaId: uploaded.media_id,
+                aiBrief: null,
+                aspectRatio: uploaded.aspect_ratio ?? null,
+                kind: "visual_asset",
+                label: (file.name || "Pasted image").replace(/\.[^/.]+$/, ""),
+              },
+              pos,
+            );
+            setActiveUploads((prev) =>
+              prev.map((u) => (u.id === uploadId ? { ...u, done: true } : u)),
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setActiveUploads((prev) =>
+              prev.map((u) =>
+                u.id === uploadId ? { ...u, done: true, error: msg.slice(0, 60) } : u,
+              ),
+            );
+          } finally {
+            window.setTimeout(() => {
+              setActiveUploads((prev) => prev.filter((u) => u.id !== uploadId));
+            }, 1200);
+          }
+        }),
+      );
+    },
+    [screenToFlowPosition],
+  );
+
   const onCanvasDrop = useCallback(
     async (e: React.DragEvent) => {
       const raw = e.dataTransfer.getData("application/x-flowboard-reference");
@@ -905,6 +975,44 @@ export function Board() {
     el.addEventListener("mousemove", onMove);
     return () => el.removeEventListener("mousemove", onMove);
   }, []);
+
+  // ── Clipboard image paste (Ctrl+V) ──────────────────────────────────
+  // When the OS clipboard holds an image (copied from a website, file
+  // explorer, screenshot tool…), paste it as a visual_asset node at the
+  // cursor. Ignored when the user is typing in a field, or when the
+  // clipboard holds our own copied nodes (handled by the keydown path).
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const active = document.activeElement;
+      const tag = (active?.tagName ?? "").toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        (active instanceof HTMLElement && active.isContentEditable)
+      ) {
+        return; // let the field handle paste
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (const it of items) {
+        if (it.kind === "file" && it.type.startsWith("image/")) {
+          const f = it.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length === 0) return; // not an image — leave node-paste alone
+      e.preventDefault();
+      const pos = lastMousePosRef.current ?? {
+        clientX: window.innerWidth / 2,
+        clientY: window.innerHeight / 2,
+      };
+      void uploadImagesAt(files, pos.clientX, pos.clientY);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [uploadImagesAt]);
 
   // ── Keyboard: g (open generation dialog) + V/H (mode toggle) +
   //              Ctrl+C / Ctrl+V (copy / paste selection) ──────────────
