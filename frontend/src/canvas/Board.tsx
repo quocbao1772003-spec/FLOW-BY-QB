@@ -864,7 +864,11 @@ export function Board() {
   const onConnect = useCallback(
     (connection: Connection) => {
       if (connection.source && connection.target) {
-        addEdgeFromConnection(connection.source, connection.target);
+        addEdgeFromConnection(
+          connection.source,
+          connection.target,
+          connection.targetHandle,
+        );
         connectStateRef.current.didConnect = true;
       }
     },

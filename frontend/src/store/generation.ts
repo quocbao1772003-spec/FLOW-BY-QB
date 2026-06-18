@@ -71,9 +71,42 @@ interface GenerationState {
 // which downstream by clicking the variant tile (Stage 2 UX).
 const REF_SOURCE_TYPES = new Set(["character", "image", "visual_asset", "Storyboard"]);
 
+function pickRefMedia(
+  src: { data: { mediaId?: unknown; mediaIds?: unknown } },
+  pinned: number | null,
+): string | null {
+  const variants = Array.isArray(src.data.mediaIds) ? (src.data.mediaIds as unknown[]) : [];
+  if (pinned !== null && pinned >= 0 && pinned < variants.length && typeof variants[pinned] === "string" && variants[pinned]) {
+    return variants[pinned] as string;
+  }
+  if (typeof src.data.mediaId === "string" && src.data.mediaId) return src.data.mediaId;
+  if (variants.length > 0 && typeof variants[0] === "string" && variants[0]) return variants[0] as string;
+  return null;
+}
+
 function collectUpstreamRefMediaIds(targetRfId: string): string[] {
   const { nodes, edges } = useBoardStore.getState();
+  const target = nodes.find((n) => n.id === targetRfId);
   const ids: string[] = [];
+
+  // Ordered image-input slots (Weavy-style): walk the target's
+  // `imageInputs` array so refs reach the model in the exact order the
+  // user wired them (Image 1, 2, 3…), matching prompts that say
+  // "ảnh 1/2/3". Falls back to edge order for nodes without slots.
+  const slots = target?.data.imageInputs;
+  if (target?.data.type === "image" && Array.isArray(slots) && slots.some((s) => s)) {
+    for (const srcId of slots) {
+      if (!srcId) continue;
+      const src = nodes.find((n) => n.id === srcId);
+      if (!src || !REF_SOURCE_TYPES.has(src.data.type)) continue;
+      const edge = edges.find((e) => e.source === srcId && e.target === targetRfId);
+      const pinned = (edge?.data?.sourceVariantIdx ?? null) as number | null;
+      const chosen = pickRefMedia(src, pinned);
+      if (chosen) ids.push(chosen);
+    }
+    return ids;
+  }
+
   for (const e of edges) {
     if (e.target !== targetRfId) continue;
     const src = nodes.find((n) => n.id === e.source);

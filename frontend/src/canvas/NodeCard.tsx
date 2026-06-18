@@ -1715,6 +1715,51 @@ function EditableNodeTitle({
   );
 }
 
+// Weavy-style ordered image inputs: render N labeled target handles
+// ("Image 1", "Image 2"…) down the node's left edge + an "Add another
+// image input" button. The slot index is the handle id (`in-N`), so the
+// connection order is explicit and matches prompts that say "ảnh 1/2/3".
+function ImageInputHandles({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
+  const inputs = Array.isArray(data.imageInputs) ? data.imageInputs : [];
+  // Visible slot count: at least 3, and always one empty slot past the
+  // last filled one so the user can keep adding.
+  const filled = inputs.length;
+  const count = Math.max(data.imageInputCount ?? 3, filled + (inputs[filled - 1] ? 1 : 0), 3);
+
+  function addInput(e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = count + 1;
+    useBoardStore.getState().updateNodeData(rfId, { imageInputCount: next });
+    const dbId = parseInt(rfId, 10);
+    if (!isNaN(dbId)) patchNode(dbId, { data: { imageInputCount: next } }).catch(() => {});
+  }
+
+  return (
+    <div className="image-inputs">
+      {Array.from({ length: count }, (_, i) => (
+        <div className="image-input-slot" key={i}>
+          <span className="image-input-slot__label">Image {i + 1}</span>
+          <Handle
+            type="target"
+            position={Position.Left}
+            id={`in-${i}`}
+            className="node-handle image-input-handle"
+            style={{ top: "50%" }}
+          />
+        </div>
+      ))}
+      <button
+        type="button"
+        className="image-input-add nodrag"
+        onClick={addInput}
+        title="Thêm ô ảnh đầu vào"
+      >
+        + Add image input
+      </button>
+    </div>
+  );
+}
+
 function downloadExt(type: string): string {
   if (type === "video") return "mp4";
   return "png";
@@ -2011,7 +2056,11 @@ export function NodeCard(props: NodeProps<FlowNode>) {
           />
         )}
         <StatusStrip status={data.status} />
-        <Handle type="target" position={Position.Left} className="node-handle" />
+        {data.type === "image" ? (
+          <ImageInputHandles rfId={props.id} data={data} />
+        ) : (
+          <Handle type="target" position={Position.Left} className="node-handle" />
+        )}
 
         <NodeBody rfId={props.id} data={data} />
 

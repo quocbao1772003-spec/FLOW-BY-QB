@@ -60,6 +60,12 @@ export interface FlowboardNodeData extends Record<string, unknown> {
   // Spliced into auto-prompts on downstream nodes for richer context.
   aiBrief?: string;
   aiBriefStatus?: "pending" | "done" | "failed";
+  // Ordered image-input slots (Weavy-style). index = slot, value = the
+  // source node rfId feeding that slot ("" = empty). Drives ref ordering
+  // at dispatch and the labeled Image 1/2/3 handles on the card.
+  imageInputs?: string[];
+  // How many input slots to show (default 3). + Add input increments it.
+  imageInputCount?: number;
   // Group membership — rfId of the "group" frame node this node belongs
   // to. Dragging the frame moves every member by the same delta.
   groupId?: string;
@@ -126,6 +132,40 @@ function edgeFromDto(dto: {
     target: String(dto.target_id),
     data: { sourceVariantIdx: dto.source_variant_idx ?? null },
   };
+}
+
+// Reconstruct each edge's targetHandle from the target image node's
+// `imageInputs` array so the edge visually attaches to the right
+// "Image N" slot after a reload (handles aren't persisted on the edge).
+function assignImageInputHandles(
+  nodes: FlowNode[],
+  edges: Edge<FlowboardEdgeData>[],
+): Edge<FlowboardEdgeData>[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  // Legacy image nodes have no `imageInputs` yet — derive a stable slot
+  // order from their incoming edges so old boards still attach edges to
+  // sequential handles.
+  const derived = new Map<string, string[]>(); // targetId → [sourceId per slot]
+  for (const e of edges) {
+    const t = byId.get(e.target);
+    if (t?.data.type === "image" && !Array.isArray(t.data.imageInputs)) {
+      const arr = derived.get(e.target) ?? [];
+      arr.push(e.source);
+      derived.set(e.target, arr);
+    }
+  }
+  return edges.map((e) => {
+    const t = byId.get(e.target);
+    if (t?.data.type !== "image") return e;
+    const slots = Array.isArray(t.data.imageInputs)
+      ? (t.data.imageInputs as string[])
+      : derived.get(e.target);
+    if (slots) {
+      const idx = slots.indexOf(e.source);
+      if (idx >= 0) return { ...e, targetHandle: `in-${idx}` };
+    }
+    return e;
+  });
 }
 
 // ── Tiny per-node debounce (no external deps) ─────────────────────────────
@@ -224,7 +264,7 @@ interface BoardState {
   ): Promise<string | null>;
   persistNodePosition(rfId: string, position: { x: number; y: number }): Promise<void>;
   deleteNodeByRfId(rfId: string): Promise<void>;
-  addEdgeFromConnection(source: string, target: string): Promise<void>;
+  addEdgeFromConnection(source: string, target: string, targetHandle?: string | null): Promise<void>;
   deleteEdgeByRfId(rfId: string): Promise<void>;
   // Spawn an empty sibling node next to `rfId` with the same type and the
   // same upstream edges. Returns the new node's rfId so callers can focus
@@ -299,7 +339,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         },
       }));
 
-      const edges: Edge[] = detail.edges.map(edgeFromDto);
+      const edges: Edge[] = assignImageInputHandles(nodes, detail.edges.map(edgeFromDto));
 
       set({
         boardId: detail.board.id,
@@ -358,7 +398,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           storyboardGrid: n.data["storyboardGrid"] as StoryboardGrid | undefined,
         },
       }));
-      const edges: Edge[] = detail.edges.map(edgeFromDto);
+      const edges: Edge[] = assignImageInputHandles(nodes, detail.edges.map(edgeFromDto));
       set({
         boardId: detail.board.id,
         boardName: detail.board.name,
@@ -446,7 +486,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           error: n.data["error"] as string | undefined,
         },
       }));
-      const edges: Edge[] = detail.edges.map(edgeFromDto);
+      const edges: Edge[] = assignImageInputHandles(nodes, detail.edges.map(edgeFromDto));
       set({ nodes, edges });
     } catch {
       // ignore — leave state alone, next poll will retry
@@ -590,7 +630,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }
   },
 
-  async addEdgeFromConnection(source, target) {
+  async addEdgeFromConnection(source, target, targetHandle) {
     const { boardId } = get();
     if (boardId === null) return;
     const sourceId = parseInt(source, 10);
@@ -598,7 +638,37 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     if (isNaN(sourceId) || isNaN(targetId)) return;
     try {
       const dto = await createEdge({ board_id: boardId, source_id: sourceId, target_id: targetId });
-      set((s) => ({ edges: [...s.edges, edgeFromDto(dto)] }));
+      const edge = edgeFromDto(dto);
+
+      // Image-input slots (Weavy-style ordered handles): the target image
+      // node tracks which source feeds which slot in `data.imageInputs`.
+      // Persisted as JSON (no DB schema change); the edge's targetHandle
+      // is reconstructed from this array on load.
+      const targetNode = get().nodes.find((n) => n.id === target);
+      if (targetNode && targetNode.data.type === "image") {
+        const slots: string[] = Array.isArray(targetNode.data.imageInputs)
+          ? [...(targetNode.data.imageInputs as string[])]
+          : [];
+        let slotIdx = -1;
+        const m = /^in-(\d+)$/.exec(targetHandle ?? "");
+        if (m) slotIdx = parseInt(m[1], 10);
+        if (slotIdx < 0) {
+          // No explicit slot — drop into the first empty slot, else append.
+          slotIdx = slots.findIndex((s) => !s);
+          if (slotIdx < 0) slotIdx = slots.length;
+        }
+        // Grow the array if needed; one source per slot.
+        while (slots.length <= slotIdx) slots.push("");
+        slots[slotIdx] = source;
+        edge.targetHandle = `in-${slotIdx}`;
+        get().updateNodeData(target, { imageInputs: slots });
+        const dbId = parseInt(target, 10);
+        if (!isNaN(dbId)) {
+          patchNode(dbId, { data: { imageInputs: slots } }).catch(() => {});
+        }
+      }
+
+      set((s) => ({ edges: [...s.edges, edge] }));
     } catch {
       // ignore
     }
@@ -678,6 +748,19 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   async deleteEdgeByRfId(rfId) {
     const dbId = parseInt(rfId, 10);
     if (isNaN(dbId)) return;
+    // Clear the freed image-input slot on the target image node.
+    const edge = get().edges.find((e) => e.id === rfId);
+    if (edge) {
+      const t = get().nodes.find((n) => n.id === edge.target);
+      if (t && t.data.type === "image" && Array.isArray(t.data.imageInputs)) {
+        const slots = (t.data.imageInputs as string[]).map((s) =>
+          s === edge.source ? "" : s,
+        );
+        get().updateNodeData(edge.target, { imageInputs: slots });
+        const tDbId = parseInt(edge.target, 10);
+        if (!isNaN(tDbId)) patchNode(tDbId, { data: { imageInputs: slots } }).catch(() => {});
+      }
+    }
     try {
       await deleteEdge(dbId);
       set((s) => ({ edges: s.edges.filter((e) => e.id !== rfId) }));

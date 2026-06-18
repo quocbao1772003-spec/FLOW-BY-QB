@@ -2144,6 +2144,58 @@ button:disabled {
   color: var(--fg-0, #f5f5f5);
 }
 
+/* ── Ordered image inputs (Weavy-style Image 1/2/3 handles) ─────────── */
+.image-inputs {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  /* Sit just outside the card's left edge so labels read clearly. */
+  transform: translateX(-100%);
+  padding-right: 14px;
+  pointer-events: none;
+}
+.image-input-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 18px;
+}
+.image-input-slot__label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-3, #aaa);
+  white-space: nowrap;
+  user-select: none;
+}
+/* Override the handle's absolute centering so each one sits at its row. */
+.image-inputs .image-input-handle {
+  position: absolute !important;
+  right: 0 !important;
+  left: auto !important;
+  transform: translate(50%, -50%) !important;
+  pointer-events: all;
+}
+.image-input-add {
+  margin-top: 4px;
+  align-self: flex-end;
+  font-size: 10px;
+  color: var(--accent-0, #3b82f6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  pointer-events: all;
+}
+.image-input-add:hover {
+  text-decoration: underline;
+}
+
 /* Edge cut button — scissors at the selected edge's midpoint */
 .edge-cut-btn {
   position: absolute;
