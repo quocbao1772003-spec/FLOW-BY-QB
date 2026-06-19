@@ -1047,7 +1047,8 @@ class FlowSDK:
             return {"raw": resp, "error": inner_err}
 
         # upsampleImage returns the upscaled bytes INLINE as base64 in
-        # `data.encodedImage` (not a media_id like batchGenerateImages).
+        # `data.encodedImage` (confirmed: no separate media handle — this
+        # is the full and only output Flow gives).
         data = resp.get("data") if isinstance(resp, dict) else None
         enc = data.get("encodedImage") if isinstance(data, dict) else None
         if not isinstance(enc, str) or not enc:
