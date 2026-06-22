@@ -1841,10 +1841,21 @@ button:disabled {
   color: var(--fg-4);
 }
 
-.flow-card__delete {
+.flow-card__actions {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.flow-card:hover .flow-card__actions {
+  opacity: 1;
+}
+
+.flow-card__action {
   width: 26px;
   height: 26px;
   display: flex;
@@ -1853,16 +1864,16 @@ button:disabled {
   border-radius: 7px;
   background: rgba(16, 16, 16, 0.7);
   color: var(--fg-3);
-  opacity: 0;
   cursor: pointer;
-  transition: opacity 100ms ease, color 80ms ease;
+  transition: color 80ms ease, background 80ms ease;
 }
 
-.flow-card:hover .flow-card__delete {
-  opacity: 1;
+.flow-card__action:hover {
+  color: var(--fg-0);
+  background: rgba(16, 16, 16, 0.9);
 }
 
-.flow-card__delete:hover {
+.flow-card__action--danger:hover {
   color: #f66950;
 }
 
