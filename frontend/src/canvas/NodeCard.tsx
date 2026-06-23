@@ -1939,7 +1939,15 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     // Image node only generates with a REAL prompt: typed in its own box,
     // or supplied by a connected Assistant / Prompt / Note node. No prompt
     // source → block (no vision auto-synth).
-    let prompt = resolveImagePrompt(props.id, data.prompt ?? "");
+    // Read the OWN prompt fresh from the store (not the render closure) so
+    // a just-typed prompt isn't missed if the inline editor's debounced
+    // save hasn't committed yet (was: error on first click, ok on second).
+    const ownPrompt =
+      promptEditing
+        ? promptDraft
+        : (useBoardStore.getState().nodes.find((n) => n.id === props.id)?.data
+            .prompt as string | undefined) ?? data.prompt ?? "";
+    let prompt = resolveImagePrompt(props.id, ownPrompt);
     if (!prompt) {
       useGenerationStore.setState({
         error:
