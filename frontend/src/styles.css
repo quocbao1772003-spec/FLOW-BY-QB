@@ -2217,6 +2217,13 @@ button:disabled {
 .image-input-add:hover {
   text-decoration: underline;
 }
+.image-input-add--assistant {
+  margin-top: 2px;
+  color: var(--fg-3, #9ca3af);
+}
+.image-input-add--assistant:hover {
+  color: var(--accent-0, #3b82f6);
+}
 
 /* Edge cut button — scissors at the selected edge's midpoint */
 .edge-cut-btn {

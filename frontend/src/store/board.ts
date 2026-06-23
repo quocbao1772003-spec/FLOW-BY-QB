@@ -648,7 +648,17 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       // Persisted as JSON (no DB schema change); the edge's targetHandle
       // is reconstructed from this array on load.
       const targetNode = get().nodes.find((n) => n.id === target);
-      if (targetNode && targetNode.data.type === "image") {
+      const sourceNode = get().nodes.find((n) => n.id === source);
+      // Prompt feeders (Assistant / Prompt / Note) supply text, not an image
+      // reference — they must NOT occupy a numbered Image slot, or they'd
+      // shift the real refs (Image 1/2/3). resolveImagePrompt picks them up
+      // from the upstream edge regardless of handle.
+      const sourceIsPromptFeeder =
+        sourceNode != null &&
+        (sourceNode.data.type === "assistant" ||
+          sourceNode.data.type === "prompt" ||
+          sourceNode.data.type === "note");
+      if (targetNode && targetNode.data.type === "image" && !sourceIsPromptFeeder) {
         const slots: string[] = Array.isArray(targetNode.data.imageInputs)
           ? [...(targetNode.data.imageInputs as string[])]
           : [];

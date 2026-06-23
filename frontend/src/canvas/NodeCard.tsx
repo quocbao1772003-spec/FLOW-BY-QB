@@ -1735,6 +1735,21 @@ function ImageInputHandles({ rfId, data }: { rfId: string; data: FlowboardNodeDa
     if (!isNaN(dbId)) patchNode(dbId, { data: { imageInputCount: next } }).catch(() => {});
   }
 
+  // Create an Assistant node to the left of this image node and wire it
+  // in — its text output becomes this node's prompt (resolveImagePrompt
+  // reads a connected Assistant/Text/Note). Lets the user attach an AI
+  // prompt-writer in one click.
+  async function addAssistant(e: React.MouseEvent) {
+    e.stopPropagation();
+    const store = useBoardStore.getState();
+    const me = store.nodes.find((n) => n.id === rfId);
+    const pos = me
+      ? { x: me.position.x - 460, y: me.position.y + 80 }
+      : { x: 0, y: 0 };
+    const newId = await store.addNodeOfType("assistant", pos);
+    if (newId) await store.addEdgeFromConnection(newId, rfId);
+  }
+
   return (
     <div className="image-inputs">
       {Array.from({ length: count }, (_, i) => (
@@ -1758,6 +1773,14 @@ function ImageInputHandles({ rfId, data }: { rfId: string; data: FlowboardNodeDa
         title="Thêm ô ảnh đầu vào"
       >
         + Add image input
+      </button>
+      <button
+        type="button"
+        className="image-input-add image-input-add--assistant nodrag"
+        onClick={addAssistant}
+        title="Tạo node Assistant và nối vào để viết prompt cho ảnh"
+      >
+        + Add Assistant
       </button>
     </div>
   );
