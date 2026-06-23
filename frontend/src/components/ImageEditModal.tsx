@@ -176,7 +176,10 @@ export function ImageEditModal({ rfId, mediaId, onClose, initialTool }: Props) {
 
   // ── CROP tool ─────────────────────────────────────────────────────
   // Stored as fractions of the natural image so resize-invariant.
-  const [cropFrac, setCropFrac] = useState({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+  // Start with the crop box filling the whole image — no crop until the
+  // user drags a handle. (Was 80% centered, which looked like a crop was
+  // already applied on open.)
+  const [cropFrac, setCropFrac] = useState({ x: 0, y: 0, w: 1, h: 1 });
   const [aspectKey, setAspectKey] = useState<string>("free");
   const aspectRatio = useMemo(
     () => ASPECT_PRESETS.find((p) => p.key === aspectKey)?.ratio ?? null,
