@@ -674,6 +674,136 @@ export function Board() {
     [screenToFlowPosition],
   );
 
+  // Paste the in-app node clipboard at the cursor. Extracted from the
+  // old keydown handler so it can be called from the `paste` event AFTER
+  // checking the OS clipboard for an image (image takes priority — a node
+  // copied earlier no longer hijacks Ctrl+V of an external image).
+  const pasteInternalNodes = useCallback(async () => {
+    if (!internalClipboard || internalClipboard.nodes.length === 0) return;
+    const boardId = useBoardStore.getState().boardId;
+    if (boardId === null) return;
+    const clipSnap = internalClipboard;
+
+    let targetFlow: { x: number; y: number };
+    if (lastMousePosRef.current) {
+      targetFlow = screenToFlowPosition({
+        x: lastMousePosRef.current.clientX,
+        y: lastMousePosRef.current.clientY,
+      });
+    } else {
+      targetFlow = { x: clipSnap.nodes[0].x + 48, y: clipSnap.nodes[0].y + 48 };
+    }
+    const avgX = clipSnap.nodes.reduce((s, n) => s + n.x, 0) / clipSnap.nodes.length;
+    const avgY = clipSnap.nodes.reduce((s, n) => s + n.y, 0) / clipSnap.nodes.length;
+
+    showToast(`Pasting ${clipSnap.nodes.length} node(s)...`, "info", 8000);
+
+    const nodeResults = await Promise.allSettled(
+      clipSnap.nodes.map((n) => {
+        const dataCopy: Record<string, unknown> = { ...n.data };
+        delete dataCopy.shortId;
+        return createNode({
+          board_id: boardId,
+          type: n.type as NodeType,
+          x: targetFlow.x + (n.x - avgX),
+          y: targetFlow.y + (n.y - avgY),
+          data: dataCopy,
+        }).then((created) => ({ oldId: n.oldId, created }));
+      }),
+    );
+
+    const idMap = new Map<string, number>();
+    const newFlowNodes: FlowNode[] = [];
+    const failedNodes: string[] = [];
+    for (const r of nodeResults) {
+      if (r.status === "fulfilled") {
+        const { oldId, created } = r.value;
+        idMap.set(oldId, created.id);
+        newFlowNodes.push({
+          id: String(created.id),
+          type: created.type as unknown as string,
+          position: { x: created.x, y: created.y },
+          data: {
+            ...(created.data as Record<string, unknown>),
+            type: created.type,
+            shortId: created.short_id,
+            status: created.status,
+          },
+          selected: false,
+        } as unknown as FlowNode);
+      } else {
+        failedNodes.push(String(r.reason));
+        console.error("[paste] createNode failed:", r.reason);
+      }
+    }
+
+    const edgePayloads = clipSnap.edges
+      .map((edge) => {
+        const newSrc = idMap.get(edge.oldSourceId);
+        const newDst = idMap.get(edge.oldTargetId);
+        if (newSrc === undefined || newDst === undefined) return null;
+        return { newSrc, newDst, kind: edge.kind, vIdx: edge.sourceVariantIdx };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    const edgeResults = await Promise.allSettled(
+      edgePayloads.map((p) => {
+        const payload: Parameters<typeof createEdge>[0] = {
+          board_id: boardId,
+          source_id: p.newSrc,
+          target_id: p.newDst,
+          source_variant_idx: p.vIdx,
+        };
+        if (p.kind && p.kind !== "default") payload.kind = p.kind;
+        return createEdge(payload);
+      }),
+    );
+    const newFlowEdges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      type: string;
+      data: { sourceVariantIdx: number | null };
+    }> = [];
+    let failedEdges = 0;
+    for (const r of edgeResults) {
+      if (r.status === "fulfilled") {
+        const ed = r.value;
+        newFlowEdges.push({
+          id: String(ed.id),
+          source: String(ed.source_id),
+          target: String(ed.target_id),
+          type: "default",
+          data: { sourceVariantIdx: ed.source_variant_idx },
+        });
+      } else {
+        failedEdges += 1;
+        console.error("[paste] createEdge failed:", r.reason);
+      }
+    }
+
+    const currentNodes = useBoardStore.getState().nodes;
+    const currentEdges = useBoardStore.getState().edges;
+    setNodes([...currentNodes, ...newFlowNodes]);
+    setEdges([...currentEdges, ...(newFlowEdges as unknown as typeof currentEdges)]);
+
+    const flashIds = new Set(newFlowNodes.map((n) => n.id));
+    setPastedFlashIds(flashIds);
+    window.setTimeout(() => setPastedFlashIds(new Set()), 1200);
+
+    const okN = newFlowNodes.length;
+    const okE = newFlowEdges.length;
+    if (failedNodes.length === 0 && failedEdges === 0) {
+      showToast(`✓ Pasted ${okN} node${okN !== 1 ? "s" : ""}` + (okE ? ` + ${okE} edge${okE !== 1 ? "s" : ""}` : ""), "success");
+    } else {
+      showToast(
+        `Pasted ${okN} of ${clipSnap.nodes.length} (${failedNodes.length} node + ${failedEdges} edge errors — see console)`,
+        "error",
+        3000,
+      );
+    }
+  }, [screenToFlowPosition, setNodes, setEdges]);
+
   const onCanvasDrop = useCallback(
     async (e: React.DragEvent) => {
       const raw = e.dataTransfer.getData("application/x-flowboard-reference");
@@ -980,11 +1110,11 @@ export function Board() {
     return () => el.removeEventListener("mousemove", onMove);
   }, []);
 
-  // ── Clipboard image paste (Ctrl+V) ──────────────────────────────────
-  // When the OS clipboard holds an image (copied from a website, file
-  // explorer, screenshot tool…), paste it as a visual_asset node at the
-  // cursor. Ignored when the user is typing in a field, or when the
-  // clipboard holds our own copied nodes (handled by the keydown path).
+  // ── Clipboard paste (Ctrl+V) — single source of truth ───────────────
+  // Priority: an IMAGE in the OS clipboard (from a website / screenshot /
+  // file) → uploaded as a node. Otherwise → paste the in-app node
+  // clipboard. This ordering means a node copied earlier no longer
+  // hijacks Ctrl+V when the user just copied an external image.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const active = document.activeElement;
@@ -995,28 +1125,37 @@ export function Board() {
         tag === "select" ||
         (active instanceof HTMLElement && active.isContentEditable)
       ) {
-        return; // let the field handle paste
+        return; // let the field handle paste (text)
       }
       const items = e.clipboardData?.items;
-      if (!items) return;
       const files: File[] = [];
-      for (const it of items) {
-        if (it.kind === "file" && it.type.startsWith("image/")) {
-          const f = it.getAsFile();
-          if (f) files.push(f);
+      if (items) {
+        for (const it of items) {
+          if (it.kind === "file" && it.type.startsWith("image/")) {
+            const f = it.getAsFile();
+            if (f) files.push(f);
+          }
         }
       }
-      if (files.length === 0) return; // not an image — leave node-paste alone
-      e.preventDefault();
-      const pos = lastMousePosRef.current ?? {
-        clientX: window.innerWidth / 2,
-        clientY: window.innerHeight / 2,
-      };
-      void uploadImagesAt(files, pos.clientX, pos.clientY);
+      if (files.length > 0) {
+        // External image wins.
+        e.preventDefault();
+        const pos = lastMousePosRef.current ?? {
+          clientX: window.innerWidth / 2,
+          clientY: window.innerHeight / 2,
+        };
+        void uploadImagesAt(files, pos.clientX, pos.clientY);
+        return;
+      }
+      // No image → paste the in-app node clipboard (if any).
+      if (internalClipboard && internalClipboard.nodes.length > 0) {
+        e.preventDefault();
+        void pasteInternalNodes();
+      }
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [uploadImagesAt]);
+  }, [uploadImagesAt, pasteInternalNodes]);
 
   // ── Keyboard: g (open generation dialog) + V/H (mode toggle) +
   //              Ctrl+C / Ctrl+V (copy / paste selection) ──────────────
@@ -1171,8 +1310,12 @@ export function Board() {
         return;
       }
 
-      // ── Ctrl+V — paste the internal clipboard (no page reload)
-      if (isMod && key === "v") {
+      // ── Ctrl+V — handled by the `paste` event listener instead (so the
+      // OS clipboard image takes priority over a previously-copied node).
+      // Intentionally NOT handled here: we must NOT preventDefault on
+      // keydown, or the browser cancels the paste event and external
+      // image paste stops working.
+      if (false && isMod && key === "v") {
         if (!internalClipboard || internalClipboard.nodes.length === 0) return;
 
         e.preventDefault();
