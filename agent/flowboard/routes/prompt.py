@@ -66,3 +66,22 @@ async def auto_prompt_batch(body: AutoPromptBatchBody) -> AutoPromptBatchRespons
     except prompt_synth.PromptSynthError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return AutoPromptBatchResponse(node_id=body.node_id, prompts=prompts)
+
+
+class EnhanceBody(BaseModel):
+    prompt: str
+
+
+class EnhanceResponse(BaseModel):
+    prompt: str
+
+
+@router.post("/enhance", response_model=EnhanceResponse)
+async def enhance_prompt(body: EnhanceBody) -> EnhanceResponse:
+    """Rewrite the user's draft prompt into an optimised image prompt
+    (the "AI prompt" toggle on image nodes)."""
+    try:
+        text = await prompt_synth.enhance_prompt(body.prompt)
+    except prompt_synth.PromptSynthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return EnhanceResponse(prompt=text)

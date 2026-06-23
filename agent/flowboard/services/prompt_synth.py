@@ -229,6 +229,45 @@ class PromptSynthError(RuntimeError):
     pass
 
 
+_ENHANCE_SYSTEM = """You are a prompt engineer for Google's Nano Banana Pro \
+(GemPix 2) image generation model. Rewrite the user's draft prompt into a \
+single, optimised image-generation prompt that produces the best, most \
+accurate result.
+
+Rules:
+- Keep the user's intent, subject, and every concrete detail. Do not invent \
+new subjects or change the meaning.
+- Make it clear, specific and well structured: subject, composition, \
+lighting, style, camera, background, mood — only as relevant to the request.
+- Preserve EXACTLY any reference tokens like "@Image #ab12" or "ảnh 1/2/3" — \
+they map to attached reference images; never drop or renumber them.
+- Write in the SAME language the user used.
+- Output ONLY the final prompt text. No preamble, no quotes, no explanation, \
+no markdown."""
+
+
+async def enhance_prompt(text: str) -> str:
+    """Rewrite a user's draft image prompt into an optimised one via the
+    configured Auto-Prompt provider (default Claude). Returns the improved
+    prompt text; raises PromptSynthError on failure."""
+    draft = (text or "").strip()
+    if not draft:
+        raise PromptSynthError("empty prompt")
+    try:
+        out = await run_llm(
+            "auto_prompt",
+            draft,
+            system_prompt=_ENHANCE_SYSTEM,
+            timeout=120.0,
+        )
+    except LLMError as exc:
+        raise PromptSynthError(f"enhance provider failed: {exc}") from exc
+    out = (out or "").strip()
+    # Strip wrapping quotes/backticks the model sometimes adds.
+    out = out.strip('`"“”').strip()
+    return out or draft
+
+
 # Ref-source node types — the ones whose mediaId becomes a position
 # entry in the request's ``imageInputs`` array. MUST match the
 # frontend's ``REF_SOURCE_TYPES`` set in ``store/generation.ts`` so the

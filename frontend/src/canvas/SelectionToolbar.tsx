@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { createNode, mediaUrl, patchNode, runAssistant } from "../api/client";
+import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant } from "../api/client";
 import { resolveImagePrompt } from "./NodeCard";
 import {
   IconCaretDown,
@@ -75,8 +75,19 @@ async function runSingleNode(n: FlowNode): Promise<boolean> {
     const variantCount = Math.max(1, Math.min(n.data.variantCount ?? 1, 4));
     // Image node only runs with a real prompt (own box, or a connected
     // Assistant / Prompt / Note). No vision auto-synth.
-    const prompt = resolveImagePrompt(n.id, n.data.prompt ?? "");
+    let prompt = resolveImagePrompt(n.id, n.data.prompt ?? "");
     if (!prompt) return false;
+    // AI prompt toggle — optimise via LLM first.
+    if (n.data.aiPrompt) {
+      try {
+        prompt = await enhancePrompt(prompt);
+        useBoardStore.getState().updateNodeData(n.id, { prompt });
+        const dbId = parseInt(n.id, 10);
+        if (!isNaN(dbId)) patchNode(dbId, { data: { prompt } }).catch(() => {});
+      } catch {
+        // fall through with the original prompt
+      }
+    }
     await useGenerationStore.getState().dispatchGeneration(n.id, {
       prompt,
       kind: "image",

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
+import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
 import {
@@ -22,6 +22,7 @@ import {
   IconRefresh,
   IconDownload,
   IconReplace,
+  IconSparkles,
 } from "./icons";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -1928,7 +1929,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   // to the dialog when there's no prompt yet (nothing to dispatch), or
   // for Storyboard / video nodes whose dispatch needs the dialog's extra
   // wiring (composite templates, source-variant selection).
-  function handleRunNow(e: React.MouseEvent) {
+  async function handleRunNow(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy || isRunning) return;
     if (data.type !== "image") {
@@ -1938,7 +1939,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     // Image node only generates with a REAL prompt: typed in its own box,
     // or supplied by a connected Assistant / Prompt / Note node. No prompt
     // source → block (no vision auto-synth).
-    const prompt = resolveImagePrompt(props.id, data.prompt ?? "");
+    let prompt = resolveImagePrompt(props.id, data.prompt ?? "");
     if (!prompt) {
       useGenerationStore.setState({
         error:
@@ -1946,12 +1947,42 @@ export function NodeCard(props: NodeProps<FlowNode>) {
       });
       return;
     }
+    // AI prompt toggle: rewrite/optimise the prompt via the LLM before
+    // generating. The improved prompt is saved back onto the node so the
+    // user sees exactly what produced the image.
+    if (data.aiPrompt) {
+      useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
+      try {
+        const improved = await enhancePrompt(prompt);
+        prompt = improved;
+        useBoardStore.getState().updateNodeData(props.id, {
+          prompt: improved,
+          autoPromptStatus: undefined,
+        });
+        const dbId = parseInt(props.id, 10);
+        if (!isNaN(dbId)) patchNode(dbId, { data: { prompt: improved } }).catch(() => {});
+      } catch (err) {
+        useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: undefined });
+        useGenerationStore.setState({
+          error: err instanceof Error ? `AI prompt thất bại: ${err.message}` : "AI prompt thất bại",
+        });
+        return;
+      }
+    }
     void useGenerationStore.getState().dispatchGeneration(props.id, {
       prompt,
       kind: "image",
       aspectRatio: data.aspectRatio ?? "IMAGE_ASPECT_RATIO_SQUARE",
       variantCount,
     });
+  }
+
+  function toggleAiPrompt(e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = !data.aiPrompt;
+    useBoardStore.getState().updateNodeData(props.id, { aiPrompt: next });
+    const dbId = parseInt(props.id, 10);
+    if (!isNaN(dbId)) patchNode(dbId, { data: { aiPrompt: next } }).catch(() => {});
   }
 
   function setVariantCount(e: React.MouseEvent, next: number) {
@@ -2132,6 +2163,22 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                   : "Describe the image you want to generate…"}
             </div>
           )
+        )}
+        {/* AI prompt toggle — only for image nodes (uses LLM to rewrite). */}
+        {isImageGen && (
+          <button
+            type="button"
+            className={`ai-prompt-toggle nodrag${data.aiPrompt ? " ai-prompt-toggle--on" : ""}`}
+            onClick={toggleAiPrompt}
+            title="Khi bật: prompt của bạn được AI (Claude) viết lại tối ưu trước khi gen"
+          >
+            <span className="ai-prompt-toggle__switch" aria-hidden="true">
+              <span className="ai-prompt-toggle__knob" />
+            </span>
+            <span className="ai-prompt-toggle__label">
+              <IconSparkles size={11} /> AI prompt
+            </span>
+          </button>
         )}
         {showChipFooter && (
           // Magnific-style footer: [- x1 +] [model ⌄] [1:1 ⌄] [⚙] … (▶)

@@ -642,6 +642,18 @@ export async function autoPromptBatch(
   return res.json() as Promise<AutoPromptBatchResponse>;
 }
 
+// Rewrite a draft prompt into an optimised image prompt (AI prompt toggle).
+export async function enhancePrompt(prompt: string): Promise<string> {
+  const res = await fetch("/api/prompt/enhance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  const data = (await res.json()) as { prompt: string };
+  return data.prompt;
+}
+
 export async function autoPrompt(
   nodeId: number,
   opts?: { camera?: string },

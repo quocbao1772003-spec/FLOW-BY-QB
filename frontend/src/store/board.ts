@@ -66,6 +66,9 @@ export interface FlowboardNodeData extends Record<string, unknown> {
   imageInputs?: string[];
   // How many input slots to show (default 3). + Add input increments it.
   imageInputCount?: number;
+  // "AI prompt" toggle — when on, the typed prompt is rewritten/optimised
+  // by the LLM before generating.
+  aiPrompt?: boolean;
   // Group membership — rfId of the "group" frame node this node belongs
   // to. Dragging the frame moves every member by the same delta.
   groupId?: string;
