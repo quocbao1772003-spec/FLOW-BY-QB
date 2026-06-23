@@ -183,6 +183,33 @@ function debouncePosition(rfId: string, fn: () => void, delay = 150) {
   }, delay));
 }
 
+// ── Undo history (Ctrl+Z) ──────────────────────────────────────────────────
+// We record an *inverse* operation for each structural edit the user makes:
+// adding / deleting a node, adding / deleting an edge, and moving nodes. A
+// single Ctrl+Z pops the latest inverse and replays it (locally + persisted).
+// Text edits inside a node's prompt are deliberately NOT tracked here — the
+// browser's native textarea undo already handles typing, and Board.tsx only
+// routes Ctrl+Z to us when focus isn't in an input/textarea.
+type UndoOp = { label: string; run: () => Promise<void> };
+const undoStack: UndoOp[] = [];
+const UNDO_LIMIT = 100;
+// Set while replaying an undo so the inverse ops we issue (delete a node we
+// just re-added, etc.) don't get pushed back onto the stack themselves.
+let undoSuppressed = false;
+// When > 0 we're inside an explicit batch (e.g. deleting a multi-selection):
+// every pushUndo is collected so one Ctrl+Z reverses the whole group.
+let batchDepth = 0;
+let batchBuffer: UndoOp[] = [];
+function pushUndo(op: UndoOp) {
+  if (undoSuppressed) return;
+  if (batchDepth > 0) {
+    batchBuffer.push(op);
+    return;
+  }
+  undoStack.push(op);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+}
+
 // ── Type-to-title lookup ───────────────────────────────────────────────────
 const TYPE_TITLE: Record<NodeType, string> = {
   character: "Character",
@@ -284,6 +311,21 @@ interface BoardState {
   setNodes(nodes: FlowNode[]): void;
   setEdges(edges: Edge[]): void;
   clearError(): void;
+
+  // ── Undo (Ctrl+Z) ──
+  /** Pop and replay the most recent inverse op. No-op if history is empty. */
+  undo(): Promise<void>;
+  /** True when there's at least one undoable structural edit. */
+  canUndo(): boolean;
+  /** Record a node-move so it can be reversed. `moves` holds each node's
+   *  position *before* the drag. Called by the canvas on drag-stop. */
+  recordNodeMoves(moves: { rfId: string; x: number; y: number }[]): void;
+  /** Group several structural edits into one undo step (e.g. deleting a
+   *  multi-selection). Run the edits inside `fn`; one Ctrl+Z reverses all. */
+  runUndoBatch(label: string, fn: () => Promise<void>): Promise<void>;
+  /** Manually register an inverse op — for edits that bypass the wrapped
+   *  store methods (e.g. bulk duplication that calls createNode directly). */
+  recordUndo(label: string, run: () => Promise<void>): void;
 }
 
 export const useBoardStore = create<BoardState>((set, get) => ({
@@ -536,6 +578,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         },
       };
       set((s) => ({ nodes: [...s.nodes, node] }));
+      pushUndo({
+        label: "add node",
+        run: async () => {
+          await get().deleteNodeByRfId(node.id);
+        },
+      });
       return node.id;
     } catch (err) {
       // Surface to console so the next "I clicked Add but nothing
@@ -585,6 +633,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         },
       };
       set((s) => ({ nodes: [...s.nodes, node] }));
+      pushUndo({
+        label: "add reference",
+        run: async () => {
+          await get().deleteNodeByRfId(node.id);
+        },
+      });
       return node.id;
     } catch {
       // surface silently for now
@@ -622,12 +676,78 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     } catch {
       // If the module isn't loaded yet (tree-shaken test path), ignore.
     }
+    // Snapshot the node + its connected edges *before* deletion so Ctrl+Z
+    // can recreate it (note: the recreated node gets a fresh DB id — see the
+    // reference remap in the undo closure below).
+    const snapNode = get().nodes.find((n) => n.id === rfId);
+    const snapEdges = get().edges.filter(
+      (e) => e.source === rfId || e.target === rfId,
+    );
     try {
       await deleteNode(dbId);
       set((s) => ({
         nodes: s.nodes.filter((n) => n.id !== rfId),
         edges: s.edges.filter((e) => e.source !== rfId && e.target !== rfId),
       }));
+      if (snapNode) {
+        const oldId = rfId;
+        pushUndo({
+          label: "delete node",
+          run: async () => {
+            const { boardId } = get();
+            if (boardId === null) return;
+            // Recreate the node — backend hands back a NEW id.
+            const dto = await createNode({
+              board_id: boardId,
+              type: snapNode.data.type,
+              x: Math.round(snapNode.position.x),
+              y: Math.round(snapNode.position.y),
+              data: { ...(snapNode.data as Record<string, unknown>) },
+            });
+            const newId = String(dto.id);
+            const newNode: FlowNode = {
+              ...snapNode,
+              id: newId,
+              position: { x: dto.x, y: dto.y },
+              data: { ...snapNode.data, shortId: dto.short_id },
+            };
+            set((s) => ({ nodes: [...s.nodes, newNode] }));
+            // Repoint any image-input slots that referenced the old id.
+            for (const n of get().nodes) {
+              if (
+                Array.isArray(n.data.imageInputs) &&
+                (n.data.imageInputs as string[]).includes(oldId)
+              ) {
+                const slots = (n.data.imageInputs as string[]).map((s) =>
+                  s === oldId ? newId : s,
+                );
+                get().updateNodeData(n.id, { imageInputs: slots });
+                const nDb = parseInt(n.id, 10);
+                if (!isNaN(nDb))
+                  patchNode(nDb, { data: { imageInputs: slots } }).catch(
+                    () => {},
+                  );
+              }
+            }
+            // Recreate the edges that were attached to the deleted node,
+            // mapping the old endpoint to the new id; skip any whose other
+            // end no longer exists.
+            for (const e of snapEdges) {
+              const src = e.source === oldId ? newId : e.source;
+              const tgt = e.target === oldId ? newId : e.target;
+              const have = (id: string) =>
+                get().nodes.some((n) => n.id === id);
+              if (have(src) && have(tgt)) {
+                await get().addEdgeFromConnection(
+                  src,
+                  tgt,
+                  e.targetHandle ?? null,
+                );
+              }
+            }
+          },
+        });
+      }
     } catch {
       // ignore
     }
@@ -682,6 +802,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
 
       set((s) => ({ edges: [...s.edges, edge] }));
+      pushUndo({
+        label: "add edge",
+        run: async () => {
+          await get().deleteEdgeByRfId(edge.id);
+        },
+      });
     } catch {
       // ignore
     }
@@ -777,6 +903,24 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     try {
       await deleteEdge(dbId);
       set((s) => ({ edges: s.edges.filter((e) => e.id !== rfId) }));
+      if (edge) {
+        const snapSource = edge.source;
+        const snapTarget = edge.target;
+        const snapHandle = edge.targetHandle ?? null;
+        pushUndo({
+          label: "delete edge",
+          run: async () => {
+            const have = (id: string) => get().nodes.some((n) => n.id === id);
+            if (have(snapSource) && have(snapTarget)) {
+              await get().addEdgeFromConnection(
+                snapSource,
+                snapTarget,
+                snapHandle,
+              );
+            }
+          },
+        });
+      }
     } catch {
       // ignore
     }
@@ -799,4 +943,73 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
   clearError: () => set({ error: null }),
+
+  canUndo: () => undoStack.length > 0,
+
+  recordUndo: (label, run) => pushUndo({ label, run }),
+
+  async undo() {
+    const op = undoStack.pop();
+    if (!op) return;
+    undoSuppressed = true;
+    try {
+      await op.run();
+    } catch (err) {
+      console.error("undo failed", { label: op.label, err });
+    } finally {
+      undoSuppressed = false;
+    }
+  },
+
+  recordNodeMoves(moves) {
+    if (moves.length === 0) return;
+    pushUndo({
+      label: "move",
+      run: async () => {
+        set((s) => ({
+          nodes: s.nodes.map((n) => {
+            const mv = moves.find((m) => m.rfId === n.id);
+            return mv ? { ...n, position: { x: mv.x, y: mv.y } } : n;
+          }),
+        }));
+        for (const m of moves) {
+          const dbId = parseInt(m.rfId, 10);
+          if (!isNaN(dbId)) {
+            patchNode(dbId, { x: Math.round(m.x), y: Math.round(m.y) }).catch(
+              () => {},
+            );
+          }
+        }
+      },
+    });
+  },
+
+  async runUndoBatch(label, fn) {
+    // Re-entrant guard: nested batches just flow into the outer one.
+    if (batchDepth > 0) {
+      await fn();
+      return;
+    }
+    batchDepth++;
+    batchBuffer = [];
+    try {
+      await fn();
+    } finally {
+      const ops = batchBuffer;
+      batchBuffer = [];
+      batchDepth--;
+      if (ops.length === 1) {
+        pushUndo(ops[0]);
+      } else if (ops.length > 1) {
+        // Replay the collected inverses in reverse order so the canvas
+        // unwinds in the same way it was built up.
+        pushUndo({
+          label,
+          run: async () => {
+            for (let i = ops.length - 1; i >= 0; i--) await ops[i].run();
+          },
+        });
+      }
+    }
+  },
 }));

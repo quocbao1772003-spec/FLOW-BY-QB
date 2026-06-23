@@ -379,6 +379,12 @@ export async function duplicateSelectedNodes(): Promise<void> {
     useBoardStore.setState((s) => ({
       nodes: s.nodes.map((n) => ({ ...n, selected: ids.has(n.id) })),
     }));
+    // One Ctrl+Z removes all the clones.
+    const clonedIds = created.map((c) => c.id);
+    useBoardStore.getState().recordUndo("duplicate", async () => {
+      const del = useBoardStore.getState().deleteNodeByRfId;
+      for (const id of clonedIds) await del(id);
+    });
   }
 }
 
@@ -517,8 +523,11 @@ function MultiToolbar({ selected }: { selected: FlowNode[] }) {
     if (busy) return;
     setBusy(true);
     try {
-      const del = useBoardStore.getState().deleteNodeByRfId;
-      await Promise.allSettled(selected.map((n) => del(n.id)));
+      // One undo step for the whole multi-delete.
+      await useBoardStore.getState().runUndoBatch("delete nodes", async () => {
+        const del = useBoardStore.getState().deleteNodeByRfId;
+        for (const n of selected) await del(n.id);
+      });
     } finally {
       setBusy(false);
     }
@@ -685,9 +694,12 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
     if (busy) return;
     setBusy(true);
     try {
-      const del = useBoardStore.getState().deleteNodeByRfId;
-      await Promise.allSettled(members().map((m) => del(m.id)));
-      await del(frame.id);
+      // One undo step for the whole group + its members.
+      await useBoardStore.getState().runUndoBatch("delete group", async () => {
+        const del = useBoardStore.getState().deleteNodeByRfId;
+        for (const m of members()) await del(m.id);
+        await del(frame.id);
+      });
     } finally {
       setBusy(false);
     }

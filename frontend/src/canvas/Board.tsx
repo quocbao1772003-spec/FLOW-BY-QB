@@ -946,7 +946,18 @@ export function Board() {
     members: Map<string, { x: number; y: number }>;
   } | null>(null);
 
+  // Pre-drag position snapshot of every node, so Ctrl+Z can restore where
+  // things were before a drag (covers single, multi-select and group drags).
+  const moveStartRef = useRef<Map<string, { x: number; y: number }> | null>(
+    null,
+  );
+
   const onNodeDragStart: OnNodeDrag<FlowNode> = useCallback((_event, node) => {
+    const snap = new Map<string, { x: number; y: number }>();
+    for (const n of useBoardStore.getState().nodes) {
+      snap.set(n.id, { x: n.position.x, y: n.position.y });
+    }
+    moveStartRef.current = snap;
     if (node.data.type !== "group") return;
     const members = new Map<string, { x: number; y: number }>();
     for (const n of useBoardStore.getState().nodes) {
@@ -987,6 +998,21 @@ export function Board() {
         }
       }
       groupDragRef.current = null;
+
+      // Record the move for Ctrl+Z: any node that actually shifted from its
+      // pre-drag position, stored with its *start* coords so undo restores it.
+      const start = moveStartRef.current;
+      moveStartRef.current = null;
+      if (start) {
+        const moves: { rfId: string; x: number; y: number }[] = [];
+        for (const n of useBoardStore.getState().nodes) {
+          const s = start.get(n.id);
+          if (s && (s.x !== n.position.x || s.y !== n.position.y)) {
+            moves.push({ rfId: n.id, x: s.x, y: s.y });
+          }
+        }
+        if (moves.length > 0) useBoardStore.getState().recordNodeMoves(moves);
+      }
     },
     [persistNodePosition],
   );
@@ -1044,7 +1070,11 @@ export function Board() {
 
   const onNodesDelete = useCallback(
     (deletedNodes: FlowNode[]) => {
-      deletedNodes.forEach((n) => deleteNodeByRfId(n.id));
+      if (deletedNodes.length === 0) return;
+      // Group into one undo step so a single Ctrl+Z restores them all.
+      void useBoardStore.getState().runUndoBatch("delete nodes", async () => {
+        for (const n of deletedNodes) await deleteNodeByRfId(n.id);
+      });
     },
     [deleteNodeByRfId],
   );
@@ -1253,6 +1283,15 @@ export function Board() {
           spaceModeRef.current = interactionMode;
           setInteractionMode("hand");
         }
+        return;
+      }
+
+      // ── Ctrl/Cmd+Z — undo the last structural edit (move, add, delete,
+      // connect/disconnect). Typing inside a node's prompt is left to the
+      // browser's native textarea undo (isEditableTarget bails out above).
+      if (isMod && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        void useBoardStore.getState().undo();
         return;
       }
 
