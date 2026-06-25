@@ -1297,6 +1297,10 @@ export function Board() {
 
       // ── Ctrl+C — copy selected nodes + edges to internal clipboard
       if (isMod && key === "c") {
+        // If the user has highlighted text (e.g. in an Assistant's Result
+        // panel), let the browser copy that text instead of the node.
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
         const state = useBoardStore.getState();
         const selectedNodes = state.nodes.filter((n) => n.selected);
         if (selectedNodes.length === 0) return; // let browser handle (text copy)

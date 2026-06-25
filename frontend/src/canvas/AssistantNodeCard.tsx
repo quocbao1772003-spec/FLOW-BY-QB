@@ -115,6 +115,7 @@ export function AssistantNodeCard({ id, data, selected }: NodeProps<FlowNode>) {
     typeof data.title === "string" && data.title.trim() ? data.title.trim() : "";
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(currentTitle);
+  const [copied, setCopied] = useState(false);
 
   const startRename = useCallback(() => {
     setTitleInput(currentTitle);
@@ -213,6 +214,21 @@ export function AssistantNodeCard({ id, data, selected }: NodeProps<FlowNode>) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, [response, data.shortId, id]);
+
+  // Copy the whole result to the clipboard. If the user has highlighted just
+  // part of the text, copy that selection instead.
+  const handleCopy = useCallback(async () => {
+    const selected = window.getSelection()?.toString();
+    const text = selected && selected.trim() ? selected : response;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // Clipboard API can fail in non-secure contexts — ignore quietly.
+    }
+  }, [response]);
 
   // Don't propagate keyboard input on textarea/select to ReactFlow —
   // otherwise Backspace deletes the node while the user is editing.
@@ -488,8 +504,18 @@ export function AssistantNodeCard({ id, data, selected }: NodeProps<FlowNode>) {
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
+              // Allow click-drag to highlight the text and copy it. ReactFlow
+              // disables selection on nodes and starts a drag on mousedown, so
+              // we need both `nodrag` (no node drag) and an explicit
+              // userSelect/cursor override here.
+              userSelect: "text",
+              WebkitUserSelect: "text",
+              cursor: "text",
             }}
-            className="nowheel"
+            className="nowheel nodrag"
+            // Keep mousedown from bubbling to ReactFlow (which would start a
+            // pan / node drag and clear the selection).
+            onMouseDown={(e) => e.stopPropagation()}
           >
             {error ? (
               <span style={{ color: "#ef4444" }}>✗ {error}</span>
@@ -558,11 +584,30 @@ export function AssistantNodeCard({ id, data, selected }: NodeProps<FlowNode>) {
 
         <button
           type="button"
+          onClick={handleCopy}
+          disabled={!response}
+          className="nodrag"
+          title="Copy kết quả (hoặc phần đang bôi đen)"
+          style={{
+            marginLeft: "auto",
+            background: response ? "#2a2e38" : "transparent",
+            color: response ? (copied ? "#22c55e" : "#e4e7ec") : "#5a5f69",
+            border: "1px solid #3a3f4a",
+            padding: "5px 12px",
+            borderRadius: 6,
+            cursor: response ? "pointer" : "not-allowed",
+            fontSize: 12,
+          }}
+        >
+          {copied ? "✓ Đã copy" : "Copy"}
+        </button>
+
+        <button
+          type="button"
           onClick={handleExport}
           disabled={!response}
           className="nodrag"
           style={{
-            marginLeft: "auto",
             background: response ? "#2a2e38" : "transparent",
             color: response ? "#e4e7ec" : "#5a5f69",
             border: "1px solid #3a3f4a",
