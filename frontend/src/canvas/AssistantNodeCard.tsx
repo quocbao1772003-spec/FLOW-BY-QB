@@ -513,6 +513,9 @@ export function AssistantNodeCard({ id, data, selected }: NodeProps<FlowNode>) {
               cursor: "text",
             }}
             className="nowheel nodrag"
+            // Marks this as a text region the canvas Ctrl+C should defer to
+            // when the user has highlighted text inside it.
+            data-copyable-text
             // Keep mousedown from bubbling to ReactFlow (which would start a
             // pan / node drag and clear the selection).
             onMouseDown={(e) => e.stopPropagation()}

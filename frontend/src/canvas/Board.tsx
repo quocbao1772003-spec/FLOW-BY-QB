@@ -1297,10 +1297,18 @@ export function Board() {
 
       // ── Ctrl+C — copy selected nodes + edges to internal clipboard
       if (isMod && key === "c") {
-        // If the user has highlighted text (e.g. in an Assistant's Result
-        // panel), let the browser copy that text instead of the node.
+        // Only defer to the browser's text-copy when the highlighted text is
+        // actually inside a copyable text region (e.g. an Assistant Result
+        // panel). A stray/leftover selection elsewhere must NOT block node
+        // copy — scoping by the selection's anchor element fixes that.
         const sel = window.getSelection();
-        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+        if (sel && !sel.isCollapsed && sel.toString().trim()) {
+          const anchor =
+            sel.anchorNode instanceof Element
+              ? sel.anchorNode
+              : sel.anchorNode?.parentElement ?? null;
+          if (anchor && anchor.closest("[data-copyable-text]")) return;
+        }
         const state = useBoardStore.getState();
         const selectedNodes = state.nodes.filter((n) => n.selected);
         if (selectedNodes.length === 0) return; // let browser handle (text copy)
