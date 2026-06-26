@@ -142,14 +142,17 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     return resp, None
 
 
-# Video polling knobs — overridable in tests. 5-minute hard deadline
-# (30 cycles × 10s). When the budget runs out without all ops finishing
-# the handler returns the ``timeout_waiting_video`` sentinel and the
-# worker stamps the row as ``status='timeout'`` (distinct from
-# ``failed``) so the UI can render it as a soft auto-cancel rather than
-# a generation error.
+# Video polling knobs — overridable in tests. 15-minute hard deadline
+# (90 cycles × 10s). Omni Flash (and longer Veo clips) routinely render for
+# 6–10+ minutes server-side, so the previous 5-minute budget timed out on
+# videos that Google was still producing (the batch was already accepted +
+# credits charged — we just gave up polling too early). When the budget runs
+# out without all ops finishing the handler returns the
+# ``timeout_waiting_video`` sentinel and the worker stamps the row as
+# ``status='timeout'`` (distinct from ``failed``) so the UI can render it as a
+# soft auto-cancel rather than a generation error.
 VIDEO_POLL_INTERVAL_S = 10.0
-VIDEO_POLL_MAX_CYCLES = 30
+VIDEO_POLL_MAX_CYCLES = 90
 
 
 def _is_request_canceled(rid: Optional[int]) -> bool:
