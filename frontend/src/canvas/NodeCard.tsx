@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { useSettingsStore } from "../store/settings";
+import {
+  useSettingsStore,
+  OMNI_FLASH_DURATIONS,
+  type OmniFlashDuration,
+} from "../store/settings";
 import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
@@ -1874,6 +1878,11 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   // auto-wires it as an upstream ref.
   const [promptEditing, setPromptEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
+  // Video duration (Omni Flash) — global setting, surfaced as a footer
+  // dropdown on video nodes. Subscribed reactively so the chip reflects the
+  // current value and re-renders when changed.
+  const omniFlashDuration = useSettingsStore((s) => s.omniFlashDuration);
+  const setOmniFlashDuration = useSettingsStore((s) => s.setOmniFlashDuration);
   const [mentions, setMentions] = useState<{
     connected: MentionNode[];
     disconnected: MentionNode[];
@@ -2381,6 +2390,27 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                 </option>
               ))}
             </select>
+            {isVideoGen && (
+              <select
+                className="node-chip node-chip--select nodrag"
+                value={omniFlashDuration}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  setOmniFlashDuration(
+                    parseInt(e.target.value, 10) as OmniFlashDuration,
+                  );
+                }}
+                onClick={(e) => e.stopPropagation()}
+                title="Thời lượng video (áp dụng cho Omni Flash; Veo có thời lượng cố định)"
+                aria-label="Duration"
+              >
+                {OMNI_FLASH_DURATIONS.map((d) => (
+                  <option key={d} value={d}>
+                    ⏱ {d}s
+                  </option>
+                ))}
+              </select>
+            )}
             <span className="node-genfooter__spacer" />
             <button
               type="button"
