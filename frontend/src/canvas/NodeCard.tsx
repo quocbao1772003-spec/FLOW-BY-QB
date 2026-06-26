@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
+import { useSettingsStore } from "../store/settings";
 import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
@@ -1951,46 +1952,126 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     }
   }
 
+  // One-click video generate — same UX as the image node: dispatch straight
+  // to Flow from the footer ▶ with no popup. Pulls the motion prompt from the
+  // node's own box (or a connected Assistant / Text / Note), optionally
+  // rewrites it via the Veo-tuned AI prompt, appends the camera constraint,
+  // resolves the upstream source image, and reads model / duration / quality
+  // from the global Settings store (same values the old dialog used).
+  async function runVideoNow() {
+    // Static camera by default (locked-off, best for product shots) — mirrors
+    // the dialog's default. Stored on node.data.camera; "dynamic" → no
+    // constraint so the prompt drives any movement.
+    const STATIC_CAMERA =
+      "Camera: locked-off static frame, no zoom and no pan. Keep the full " +
+      "subject and any product clearly visible in the frame for the entire " +
+      "clip. Background and crop must not change.";
+
+    // Storyboard → video still needs the dialog's panel-animation template,
+    // so fall back to it when a Storyboard feeds this node.
+    {
+      const { nodes: upNodes, edges: upEdges } = useBoardStore.getState();
+      const hasStoryboardUpstream = upEdges
+        .filter((ed) => ed.target === props.id)
+        .some(
+          (ed) => upNodes.find((n) => n.id === ed.source)?.data.type === "Storyboard",
+        );
+      if (hasStoryboardUpstream) {
+        useGenerationStore.getState().openGenerationDialog(props.id, data.prompt ?? "");
+        return;
+      }
+    }
+
+    const ownPrompt = promptEditing
+      ? promptDraft
+      : (useBoardStore.getState().nodes.find((n) => n.id === props.id)?.data
+          .prompt as string | undefined) ?? data.prompt ?? "";
+    let prompt = resolveImagePrompt(props.id, ownPrompt);
+    if (!prompt) {
+      useGenerationStore.setState({
+        error:
+          "Node video cần prompt: nhập vào ô prompt của node, hoặc nối với một node Assistant / Text / Note.",
+      });
+      return;
+    }
+
+    // AI prompt toggle — optimise via Claude (Veo system prompt) and persist.
+    if (data.aiPrompt) {
+      useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
+      try {
+        const improved = await enhancePrompt(prompt, "video");
+        prompt = improved;
+        useBoardStore.getState().updateNodeData(props.id, {
+          prompt: improved,
+          autoPromptStatus: undefined,
+        });
+        const dbId = parseInt(props.id, 10);
+        if (!isNaN(dbId)) patchNode(dbId, { data: { prompt: improved } }).catch(() => {});
+      } catch (err) {
+        useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: undefined });
+        useGenerationStore.setState({
+          error:
+            err instanceof Error ? `AI prompt thất bại: ${err.message}` : "AI prompt thất bại",
+        });
+        return;
+      }
+    }
+
+    // Append the camera constraint last so it dominates (default = static).
+    const camera = (data.camera as string) === "dynamic" ? "dynamic" : "static";
+    const finalPrompt = camera === "static" ? `${prompt}. ${STATIC_CAMERA}` : prompt;
+
+    const aspect =
+      typeof data.aspectRatio === "string" && data.aspectRatio.startsWith("VIDEO_")
+        ? data.aspectRatio
+        : "VIDEO_ASPECT_RATIO_PORTRAIT";
+
+    const settings = useSettingsStore.getState();
+    const isOmni = settings.videoModel === "omni_flash";
+    const dispatch = useGenerationStore.getState().dispatchGeneration;
+
+    if (isOmni) {
+      // Omni Flash collects its own ingredients from every upstream ref edge.
+      void dispatch(props.id, { prompt: finalPrompt, aspectRatio: aspect, kind: "video" });
+      return;
+    }
+
+    // Veo i2v needs a literal start frame from the upstream image node.
+    const { nodes, edges } = useBoardStore.getState();
+    const srcEdge = edges.find((ed) => ed.target === props.id);
+    const srcNode = srcEdge ? nodes.find((n) => n.id === srcEdge.source) : undefined;
+    const srcSingle = (srcNode?.data.mediaId as string | undefined) ?? null;
+    const srcIds = ((srcNode?.data.mediaIds as (string | null)[] | undefined) ??
+      (srcSingle ? [srcSingle] : [])
+    ).filter((m): m is string => typeof m === "string" && m.length > 0);
+    if (srcIds.length === 0) {
+      useGenerationStore.setState({
+        error:
+          "Veo cần ảnh nguồn: nối node video với một node ảnh đã tạo xong (hoặc đổi model sang Omni Flash trong Settings).",
+      });
+      return;
+    }
+    const useMulti = srcIds.length > 1;
+    void dispatch(props.id, {
+      prompt: finalPrompt,
+      aspectRatio: aspect,
+      kind: "video",
+      sourceMediaId: useMulti ? undefined : srcIds[0],
+      sourceMediaIds: useMulti ? srcIds : undefined,
+      variantCount: srcIds.length,
+    });
+  }
+
   // One-click generate from the footer ▶ — dispatches straight to Flow
   // using the node's own prompt + footer settings, no dialog. Falls back
   // to the dialog when there's no prompt yet (nothing to dispatch), or
-  // for Storyboard / video nodes whose dispatch needs the dialog's extra
+  // for Storyboard nodes whose dispatch needs the dialog's extra
   // wiring (composite templates, source-variant selection).
   async function handleRunNow(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy || isRunning) return;
     if (data.type === "video") {
-      // AI prompt toggle: optimise the draft with Claude (Veo-tuned) and
-      // save it back, THEN open the video dialog (which carries the camera /
-      // source-variant wiring). AI prompt off → unchanged behaviour.
-      if (data.aiPrompt) {
-        const ownPrompt = promptEditing
-          ? promptDraft
-          : (useBoardStore.getState().nodes.find((n) => n.id === props.id)?.data
-              .prompt as string | undefined) ?? data.prompt ?? "";
-        const draft = (ownPrompt ?? "").trim();
-        if (draft) {
-          useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
-          try {
-            const improved = await enhancePrompt(draft, "video");
-            useBoardStore.getState().updateNodeData(props.id, {
-              prompt: improved,
-              autoPromptStatus: undefined,
-            });
-            const dbId = parseInt(props.id, 10);
-            if (!isNaN(dbId)) patchNode(dbId, { data: { prompt: improved } }).catch(() => {});
-            useGenerationStore.getState().openGenerationDialog(props.id, improved);
-          } catch (err) {
-            useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: undefined });
-            useGenerationStore.setState({
-              error:
-                err instanceof Error ? `AI prompt thất bại: ${err.message}` : "AI prompt thất bại",
-            });
-          }
-          return;
-        }
-      }
-      handleGenerate(e);
+      await runVideoNow();
       return;
     }
     if (data.type !== "image") {
@@ -2128,7 +2209,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
           {isGenerable && !showChipFooter && (
             <button
               className={`node-header__btn${isRunning ? " node-header__btn--running" : ""}`}
-              onClick={handleGenerate}
+              onClick={handleRunNow}
               aria-label="Generate from this node"
               title={llmBusy ? "Backend is still composing — try again in a moment" : "Generate"}
               tabIndex={0}
