@@ -78,8 +78,10 @@ function buildCharacterPrompt(
 
 const IMAGE_ASPECT_RATIOS = [
   { key: "IMAGE_ASPECT_RATIO_SQUARE", label: "1:1" },
-  { key: "IMAGE_ASPECT_RATIO_PORTRAIT", label: "9:16" },
   { key: "IMAGE_ASPECT_RATIO_LANDSCAPE", label: "16:9" },
+  { key: "IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE", label: "4:3" },
+  { key: "IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR", label: "3:4" },
+  { key: "IMAGE_ASPECT_RATIO_PORTRAIT", label: "9:16" },
 ] as const;
 
 const VIDEO_ASPECT_RATIOS = [

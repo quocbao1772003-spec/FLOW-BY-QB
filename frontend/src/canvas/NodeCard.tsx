@@ -830,7 +830,11 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
       ? "1 / 1"
       : data.aspectRatio === "IMAGE_ASPECT_RATIO_PORTRAIT"
         ? "9 / 16"
-        : "16 / 9";
+        : data.aspectRatio === "IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR"
+          ? "3 / 4"
+          : data.aspectRatio === "IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE"
+            ? "4 / 3"
+            : "16 / 9";
 
   return (
     <div
@@ -2036,8 +2040,10 @@ export function NodeCard(props: NodeProps<FlowNode>) {
       ]
     : [
         { v: "IMAGE_ASPECT_RATIO_SQUARE", label: "1:1" },
-        { v: "IMAGE_ASPECT_RATIO_PORTRAIT", label: "9:16" },
         { v: "IMAGE_ASPECT_RATIO_LANDSCAPE", label: "16:9" },
+        { v: "IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE", label: "4:3" },
+        { v: "IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR", label: "3:4" },
+        { v: "IMAGE_ASPECT_RATIO_PORTRAIT", label: "9:16" },
       ];
   const aspectValue =
     aspectOptions.find((o) => o.v === data.aspectRatio)?.v ?? aspectOptions[0].v;
