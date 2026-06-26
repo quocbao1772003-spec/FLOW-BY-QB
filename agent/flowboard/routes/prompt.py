@@ -70,6 +70,8 @@ async def auto_prompt_batch(body: AutoPromptBatchBody) -> AutoPromptBatchRespons
 
 class EnhanceBody(BaseModel):
     prompt: str
+    # "image" → Nano Banana Pro system prompt, "video" → Veo system prompt.
+    kind: Optional[str] = "image"
 
 
 class EnhanceResponse(BaseModel):
@@ -78,10 +80,10 @@ class EnhanceResponse(BaseModel):
 
 @router.post("/enhance", response_model=EnhanceResponse)
 async def enhance_prompt(body: EnhanceBody) -> EnhanceResponse:
-    """Rewrite the user's draft prompt into an optimised image prompt
-    (the "AI prompt" toggle on image nodes)."""
+    """Rewrite the user's draft prompt into an optimised prompt for the
+    target model (the "AI prompt" toggle on image / video nodes)."""
     try:
-        text = await prompt_synth.enhance_prompt(body.prompt)
+        text = await prompt_synth.enhance_prompt(body.prompt, kind=body.kind or "image")
     except prompt_synth.PromptSynthError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return EnhanceResponse(prompt=text)

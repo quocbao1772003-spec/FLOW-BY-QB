@@ -1959,6 +1959,40 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   async function handleRunNow(e: React.MouseEvent) {
     e.stopPropagation();
     if (llmBusy || isRunning) return;
+    if (data.type === "video") {
+      // AI prompt toggle: optimise the draft with Claude (Veo-tuned) and
+      // save it back, THEN open the video dialog (which carries the camera /
+      // source-variant wiring). AI prompt off → unchanged behaviour.
+      if (data.aiPrompt) {
+        const ownPrompt = promptEditing
+          ? promptDraft
+          : (useBoardStore.getState().nodes.find((n) => n.id === props.id)?.data
+              .prompt as string | undefined) ?? data.prompt ?? "";
+        const draft = (ownPrompt ?? "").trim();
+        if (draft) {
+          useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: "pending" });
+          try {
+            const improved = await enhancePrompt(draft, "video");
+            useBoardStore.getState().updateNodeData(props.id, {
+              prompt: improved,
+              autoPromptStatus: undefined,
+            });
+            const dbId = parseInt(props.id, 10);
+            if (!isNaN(dbId)) patchNode(dbId, { data: { prompt: improved } }).catch(() => {});
+            useGenerationStore.getState().openGenerationDialog(props.id, improved);
+          } catch (err) {
+            useBoardStore.getState().updateNodeData(props.id, { autoPromptStatus: undefined });
+            useGenerationStore.setState({
+              error:
+                err instanceof Error ? `AI prompt thất bại: ${err.message}` : "AI prompt thất bại",
+            });
+          }
+          return;
+        }
+      }
+      handleGenerate(e);
+      return;
+    }
     if (data.type !== "image") {
       handleGenerate(e);
       return;
@@ -2201,8 +2235,9 @@ export function NodeCard(props: NodeProps<FlowNode>) {
             </div>
           )
         )}
-        {/* AI prompt toggle — only for image nodes (uses LLM to rewrite). */}
-        {isImageGen && (
+        {/* AI prompt toggle — image + video nodes (LLM rewrites the prompt
+            before generating; video uses the Veo-tuned system prompt). */}
+        {(isImageGen || isVideoGen) && (
           <button
             type="button"
             className={`ai-prompt-toggle nodrag${data.aiPrompt ? " ai-prompt-toggle--on" : ""}`}

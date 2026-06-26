@@ -246,18 +246,41 @@ they map to attached reference images; never drop or renumber them.
 no markdown."""
 
 
-async def enhance_prompt(text: str) -> str:
-    """Rewrite a user's draft image prompt into an optimised one via the
-    configured Auto-Prompt provider (default Claude). Returns the improved
-    prompt text; raises PromptSynthError on failure."""
+_ENHANCE_VIDEO_SYSTEM = """You are a prompt engineer for Google's Veo \
+video generation model. Rewrite the user's draft prompt into a single, \
+optimised text-to-video / image-to-video prompt that produces the best, \
+most accurate clip.
+
+Rules:
+- Keep the user's intent, subject, and every concrete detail. Do not invent \
+new subjects or change the meaning.
+- Make it clear and cinematic: describe the action/motion over time, subject \
+behaviour, camera movement (or explicitly "locked-off static frame" when the \
+user wants no movement), framing, lighting, setting and mood — only as \
+relevant to the request.
+- If the user specifies spoken dialogue or a language for speech, preserve it \
+exactly (e.g. the line to be said, and that it is spoken in English).
+- Preserve EXACTLY any reference tokens like "@Image #ab12" or "ảnh 1/2/3" — \
+they map to attached reference images; never drop or renumber them.
+- Write in the SAME language the user used.
+- Output ONLY the final prompt text. No preamble, no quotes, no explanation, \
+no markdown."""
+
+
+async def enhance_prompt(text: str, kind: str = "image") -> str:
+    """Rewrite a user's draft prompt into an optimised one via the configured
+    Auto-Prompt provider (default Claude). ``kind`` selects the model the
+    prompt targets ("image" → Nano Banana Pro, "video" → Veo). Returns the
+    improved prompt text; raises PromptSynthError on failure."""
     draft = (text or "").strip()
     if not draft:
         raise PromptSynthError("empty prompt")
+    system = _ENHANCE_VIDEO_SYSTEM if kind == "video" else _ENHANCE_SYSTEM
     try:
         out = await run_llm(
             "auto_prompt",
             draft,
-            system_prompt=_ENHANCE_SYSTEM,
+            system_prompt=system,
             timeout=120.0,
         )
     except LLMError as exc:
