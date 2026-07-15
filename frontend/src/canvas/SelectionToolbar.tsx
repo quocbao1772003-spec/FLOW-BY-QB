@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant } from "../api/client";
+import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant, upscaleImage } from "../api/client";
 import { resolveImagePrompt } from "./NodeCard";
 import {
   IconCaretDown,
@@ -690,6 +690,74 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
     });
   }
 
+  // Download every IMAGE in the group upscaled to 2K. Each image is sent
+  // through Flow's upsampler (one at a time — Flow rate-limits, and it lets
+  // us keep a clean busy state), then the returned bytes are saved. Videos
+  // are skipped (no upscale path). Slower than the 1K download, so it shows
+  // busy + reports how many failed (e.g. Flow quota).
+  async function downloadGroupMedia2K() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const projectId = await useGenerationStore.getState().ensureProjectId();
+      if (!projectId) {
+        useGenerationStore.setState({ error: "Flow project chưa sẵn sàng." });
+        return;
+      }
+      const items: Array<{ mediaId: string; name: string }> = [];
+      for (const m of members()) {
+        const t = m.data.type;
+        if (t === "video" || t === "prompt" || t === "note" || t === "assistant") continue;
+        const rawIds =
+          m.data.mediaIds && m.data.mediaIds.length > 0
+            ? m.data.mediaIds
+            : m.data.mediaId
+              ? [m.data.mediaId]
+              : [];
+        const ids = rawIds.filter(
+          (x): x is string => typeof x === "string" && x.length > 0,
+        );
+        const safeTitle = (m.data.title || t).replace(/[^A-Za-z0-9_-]+/g, "_");
+        ids.forEach((mid, i) => {
+          const suffix = ids.length > 1 ? `-${i + 1}` : "";
+          items.push({
+            mediaId: mid,
+            name: `${safeTitle}-${m.data.shortId}${suffix}-2K.png`,
+          });
+        });
+      }
+      if (items.length === 0) {
+        useGenerationStore.setState({ error: "Group không có ảnh để tải 2K." });
+        return;
+      }
+      let failed = 0;
+      for (const item of items) {
+        try {
+          const blob = await upscaleImage(item.mediaId, projectId, "2K");
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = item.name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch {
+          failed++;
+        }
+        // Small gap so Chrome doesn't drop back-to-back downloads.
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      if (failed > 0) {
+        useGenerationStore.setState({
+          error: `Tải 2K: ${failed}/${items.length} ảnh thất bại (có thể do quota Flow).`,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteGroup() {
     if (busy) return;
     setBusy(true);
@@ -753,7 +821,18 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
         )}
       </span>
       <PillButton label={locked ? <IconLock size={13} /> : <IconUnlock size={13} />} title={locked ? "Unlock" : "Lock"} disabled={busy} onClick={toggleLock} />
-      <PillButton label={<IconDownload size={13} />} title="Download all media in group (one file each)" disabled={busy} onClick={downloadGroupMedia} />
+      <PillButton label={<IconDownload size={13} />} title="Tải toàn bộ ảnh/video trong group (1K gốc, mỗi file một ảnh)" disabled={busy} onClick={downloadGroupMedia} />
+      <PillButton
+        label={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            {busy ? <IconSpinner size={13} /> : <IconDownload size={13} />}
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>2K</span>
+          </span>
+        }
+        title="Tải toàn bộ ảnh trong group ở chất lượng 2K (nâng cấp qua Flow · chậm hơn)"
+        disabled={busy}
+        onClick={() => void downloadGroupMedia2K()}
+      />
       <PillButton label={<IconCopy size={13} />} title="Duplicate group" disabled={busy} onClick={() => void duplicateGroup()} />
       <span className="selection-toolbar__sep" />
       <PillButton label={<IconTrash size={13} />} title="Delete group + contents" danger disabled={busy} onClick={() => void deleteGroup()} />
