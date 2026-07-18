@@ -514,6 +514,33 @@ export async function upscaleImage(
   return res.blob();
 }
 
+// ── Local upscale (Lanczos + unsharp, faithful — no invented detail) ────────
+// Runs on the machine (Pillow), instant, no Flow / no quota. Enlarges to the
+// target long edge and lightly sharpens. Resolves to a downloadable Blob.
+export async function upscaleImageLocal(
+  mediaId: string,
+  resolution: "2K" | "4K" = "2K",
+): Promise<Blob> {
+  const res = await fetch("/api/upscale-local", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_id: mediaId, resolution }),
+  });
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      const d = body?.detail;
+      if (typeof d === "string") msg = d;
+      else if (d?.message) msg = String(d.message);
+    } catch {
+      /* keep status text */
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
+}
+
 export function mediaUrl(mediaId: string): string {
   const clean = mediaId.replace(/^media\//, "");
   return `/media/${encodeURIComponent(clean)}`;

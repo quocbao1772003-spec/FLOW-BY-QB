@@ -1883,6 +1883,14 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   // current value and re-renders when changed.
   const omniFlashDuration = useSettingsStore((s) => s.omniFlashDuration);
   const setOmniFlashDuration = useSettingsStore((s) => s.setOmniFlashDuration);
+  // Video model family + Veo quality — global settings, exposed as a real
+  // footer dropdown on video nodes (replacing the old display-only "Veo 3.1"
+  // label that didn't reflect the actual model). Lets the user pick a faster
+  // model (Veo Lite/Fast) vs the heavier Omni Flash without opening Settings.
+  const videoModelFamily = useSettingsStore((s) => s.videoModel);
+  const videoQuality = useSettingsStore((s) => s.videoQuality);
+  const setVideoModel = useSettingsStore((s) => s.setVideoModel);
+  const setVideoQuality = useSettingsStore((s) => s.setVideoQuality);
   const [mentions, setMentions] = useState<{
     connected: MentionNode[];
     disconnected: MentionNode[];
@@ -2027,8 +2035,18 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     }
 
     // Append the camera constraint last so it dominates (default = static).
+    // First strip any camera instruction already baked into the prompt —
+    // dispatchGeneration persists the dispatched prompt back onto the node, so
+    // without this the instruction would accumulate every time ▶ is pressed
+    // (we saw it tripled in a failed request).
     const camera = (data.camera as string) === "dynamic" ? "dynamic" : "static";
-    const finalPrompt = camera === "static" ? `${prompt}. ${STATIC_CAMERA}` : prompt;
+    const base = prompt
+      .split(STATIC_CAMERA)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .replace(/(\s*\.)+\s*$/, "")
+      .trim();
+    const finalPrompt = camera === "static" ? `${base}. ${STATIC_CAMERA}` : base;
 
     const aspect =
       typeof data.aspectRatio === "string" && data.aspectRatio.startsWith("VIDEO_")
@@ -2366,16 +2384,45 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                 +
               </button>
             </span>
-            <select
-              className="node-chip node-chip--select nodrag"
-              value={modelLabel(data.type)}
-              onChange={() => {}}
-              onClick={(e) => e.stopPropagation()}
-              title="Flow model serving this node type"
-              aria-label="Model"
-            >
-              <option value={modelLabel(data.type)}>{modelLabel(data.type)}</option>
-            </select>
+            {isVideoGen ? (
+              <select
+                className="node-chip node-chip--select nodrag"
+                value={videoModelFamily === "omni_flash" ? "omni" : `veo:${videoQuality}`}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const v = e.target.value;
+                  if (v === "omni") {
+                    setVideoModel("omni_flash");
+                  } else {
+                    const q = v.slice("veo:".length) as
+                      | "lite"
+                      | "fast"
+                      | "quality";
+                    setVideoModel("veo");
+                    setVideoQuality(q);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                title="Model video — Veo Lite/Fast nhanh hơn Omni Flash"
+                aria-label="Video model"
+              >
+                <option value="veo:lite">Veo 3.1 Lite (nhanh)</option>
+                <option value="veo:fast">Veo 3.1 Fast</option>
+                <option value="veo:quality">Veo 3.1 Quality</option>
+                <option value="omni">Omni Flash</option>
+              </select>
+            ) : (
+              <select
+                className="node-chip node-chip--select nodrag"
+                value={modelLabel(data.type)}
+                onChange={() => {}}
+                onClick={(e) => e.stopPropagation()}
+                title="Flow model serving this node type"
+                aria-label="Model"
+              >
+                <option value={modelLabel(data.type)}>{modelLabel(data.type)}</option>
+              </select>
+            )}
             <select
               className="node-chip node-chip--select nodrag"
               value={aspectValue}
@@ -2390,7 +2437,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                 </option>
               ))}
             </select>
-            {isVideoGen && (
+            {isVideoGen && videoModelFamily === "omni_flash" && (
               <select
                 className="node-chip node-chip--select nodrag"
                 value={omniFlashDuration}
@@ -2401,7 +2448,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                   );
                 }}
                 onClick={(e) => e.stopPropagation()}
-                title="Thời lượng video (áp dụng cho Omni Flash; Veo có thời lượng cố định)"
+                title="Thời lượng video (Omni Flash)"
                 aria-label="Duration"
               >
                 {OMNI_FLASH_DURATIONS.map((d) => (

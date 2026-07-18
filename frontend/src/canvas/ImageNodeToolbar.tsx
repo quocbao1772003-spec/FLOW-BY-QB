@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useBoardStore } from "../store/board";
-import { mediaUrl, upscaleImage } from "../api/client";
+import { mediaUrl, upscaleImage, upscaleImageLocal } from "../api/client";
 import { useGenerationStore } from "../store/generation";
 import { FullscreenImageViewer } from "../components/FullscreenImageViewer";
 import { RunSplitButton } from "./SelectionToolbar";
@@ -130,6 +130,33 @@ export function ImageNodeToolbar({
     }
   }, [activeMediaId, upscaling, rfId, node]);
 
+  // 2K (local AI) = Real-ESRGAN on the machine (Lanczos fallback). Faithful,
+  // no Flow / no quota. See routes/upscale.py.
+  const handleDownload2KLocal = useCallback(async () => {
+    setDlOpen(false);
+    if (!activeMediaId || upscaling) return;
+    setUpscaling(true);
+    try {
+      const blob = await upscaleImageLocal(activeMediaId, "2K");
+      const { safe, shortId } = nameParts();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe}-${shortId}-2K-ai.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      useGenerationStore.setState({
+        error:
+          err instanceof Error ? `Làm nét 2K thất bại: ${err.message}` : "Làm nét 2K thất bại",
+      });
+    } finally {
+      setUpscaling(false);
+    }
+  }, [activeMediaId, upscaling, rfId, node]);
+
   return (
     <>
     {previewOpen && activeMediaId && (
@@ -217,9 +244,16 @@ export function ImageNodeToolbar({
             <button
               type="button"
               className="image-node-toolbar__menu-item"
+              onClick={() => void handleDownload2KLocal()}
+            >
+              Tải 2K (làm nét AI · local)
+            </button>
+            <button
+              type="button"
+              className="image-node-toolbar__menu-item"
               onClick={() => void handleDownload2K()}
             >
-              Tải 2K (nâng cấp · ~10s)
+              Tải 2K (Flow · nâng cấp)
             </button>
           </div>
         )}

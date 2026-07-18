@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant, upscaleImage } from "../api/client";
+import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant, upscaleImageLocal } from "../api/client";
 import { resolveImagePrompt } from "./NodeCard";
 import {
   IconCaretDown,
@@ -690,20 +690,14 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
     });
   }
 
-  // Download every IMAGE in the group upscaled to 2K. Each image is sent
-  // through Flow's upsampler (one at a time — Flow rate-limits, and it lets
-  // us keep a clean busy state), then the returned bytes are saved. Videos
-  // are skipped (no upscale path). Slower than the 1K download, so it shows
-  // busy + reports how many failed (e.g. Flow quota).
+  // Download every IMAGE in the group upscaled to 2K — locally (Pillow
+  // Lanczos + light sharpen). Faithful (no invented detail), instant, no Flow
+  // and no quota. Videos are skipped. Done one at a time with a clean busy
+  // state; reports how many failed.
   async function downloadGroupMedia2K() {
     if (busy) return;
     setBusy(true);
     try {
-      const projectId = await useGenerationStore.getState().ensureProjectId();
-      if (!projectId) {
-        useGenerationStore.setState({ error: "Flow project chưa sẵn sàng." });
-        return;
-      }
       const items: Array<{ mediaId: string; name: string }> = [];
       for (const m of members()) {
         const t = m.data.type;
@@ -733,7 +727,7 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
       let failed = 0;
       for (const item of items) {
         try {
-          const blob = await upscaleImage(item.mediaId, projectId, "2K");
+          const blob = await upscaleImageLocal(item.mediaId, "2K");
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -746,11 +740,11 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
           failed++;
         }
         // Small gap so Chrome doesn't drop back-to-back downloads.
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 250));
       }
       if (failed > 0) {
         useGenerationStore.setState({
-          error: `Tải 2K: ${failed}/${items.length} ảnh thất bại (có thể do quota Flow).`,
+          error: `Tải 2K: ${failed}/${items.length} ảnh thất bại.`,
         });
       }
     } finally {
@@ -829,7 +823,7 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>2K</span>
           </span>
         }
-        title="Tải toàn bộ ảnh trong group ở chất lượng 2K (nâng cấp qua Flow · chậm hơn)"
+        title="Tải toàn bộ ảnh trong group ở 2K — làm nét AI trên máy (Real-ESRGAN nếu đã cài, tự nhiên · không dính quota Flow)"
         disabled={busy}
         onClick={() => void downloadGroupMedia2K()}
       />
