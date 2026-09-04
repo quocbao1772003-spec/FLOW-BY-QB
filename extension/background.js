@@ -21,7 +21,18 @@ let metrics = {
   lastError:       null,
 };
 
-const flowUrls = ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'];
+// Every URL shape a live Google Flow app tab can have. Flow moved off
+// labs.google onto its own flow.google.com domain in 2026 — a signed-in
+// visit to labs.google/fx/tools/flow now redirects there, which is what
+// silently broke captcha solving (the redirected tab stopped matching
+// this list, so every generate ended in CAPTCHA_FAILED: NO_FLOW_TAB).
+// Both domains stay listed: labs.google still serves the tool page (and
+// still loads reCAPTCHA Enterprise) and is the safe fallback.
+const flowUrls = [
+  'https://flow.google.com/*',
+  'https://labs.google/fx/tools/flow*',
+  'https://labs.google/fx/*/tools/flow*',
+];
 
 // ─── URL → Log Type Classifier ─────────────────────────────
 
@@ -116,7 +127,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
       fetchAndPushUserInfo(token);
     }
   },
-  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://labs.google/*'] },
+  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://labs.google/*', 'https://flow.google.com/*'] },
   ['requestHeaders', 'extraHeaders'],
 );
 
@@ -432,9 +443,7 @@ async function openFlowTabResilient(active = false) {
 }
 
 async function captureTokenFromFlowTab() {
-  const tabs = await chrome.tabs.query({
-    url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
-  });
+  const tabs = await chrome.tabs.query({ url: flowUrls });
 
   if (!tabs.length) {
     if (_openingFlowTab) return;
@@ -454,7 +463,9 @@ async function captureTokenFromFlowTab() {
     // Trigger a credentialed request so the page re-issues an Authorization header
     await chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      func:   () => fetch('/fx/tools/flow', { credentials: 'include' }),
+      // Re-fetch whatever the tab is already showing — the path differs
+      // between flow.google.com and labs.google/fx/tools/flow.
+      func:   () => fetch(location.href, { credentials: 'include' }),
     });
     console.log('[Flowboard] Token refresh triggered on Flow tab');
   } catch (e) {
@@ -543,7 +554,13 @@ async function solveCaptcha(requestId, captchaAction) {
         requestCaptchaFromTab(live.id, requestId, captchaAction),
         new Promise((_, rej) => setTimeout(() => rej(new Error('CAPTCHA_TIMEOUT')), 30000)),
       ]);
-      return resp;
+      if (resp?.token) return resp;
+      // Soft failure — this tab answered, but couldn't produce a token
+      // (page still booting, or a Flow surface that doesn't load
+      // reCAPTCHA Enterprise at all). Keep the reason and try the next
+      // candidate rather than failing the whole generation on it.
+      errors.push(resp?.error || 'EMPTY_CAPTCHA_RESPONSE');
+      continue;
     } catch (e) {
       const msg = e?.message || '';
       errors.push(msg);
@@ -573,7 +590,8 @@ async function solveCaptcha(requestId, captchaAction) {
       requestCaptchaFromTab(target.id, requestId, captchaAction),
       new Promise((_, rej) => setTimeout(() => rej(new Error('CAPTCHA_TIMEOUT')), 30000)),
     ]);
-    return resp;
+    if (resp?.token) return resp;
+    return { error: resp?.error || errors[0] || 'NO_FLOW_TAB' };
   } catch (e) {
     const msg = e?.message || (errors[0] ?? 'NO_FLOW_TAB');
     return { error: msg };
@@ -590,7 +608,11 @@ async function handleTrpcRequest(msg) {
   // arbitrary labs.google paths (e.g. /fx/api/trpc/account.deleteAccount would
   // also match /fx/api/trpc/ but account-level mutations should be gated server
   // side if they're ever needed).
-  if (!url || !url.startsWith('https://labs.google/fx/api/trpc/')) {
+  const TRPC_PREFIXES = [
+    'https://labs.google/fx/api/trpc/',
+    'https://flow.google.com/fx/api/trpc/',
+  ];
+  if (!url || !TRPC_PREFIXES.some((p) => url.startsWith(p))) {
     sendToAgent({ id, error: 'INVALID_TRPC_URL' });
     return;
   }
@@ -675,9 +697,7 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
   }
 
   if (msg.type === 'OPEN_FLOW_TAB') {
-    chrome.tabs.query({
-      url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
-    }).then(async (tabs) => {
+    chrome.tabs.query({ url: flowUrls }).then(async (tabs) => {
       try {
         if (tabs.length) {
           await chrome.tabs.update(tabs[0].id, { active: true });

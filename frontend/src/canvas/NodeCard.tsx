@@ -8,13 +8,13 @@ import {
   type OmniFlashDuration,
 } from "../store/settings";
 import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
-import { requestAutoBrief } from "../api/autoBrief";
 import { useReferencesStore } from "../store/references";
 import {
   normaliseStoryboardGrid,
   resolveStoryboardLayout,
 } from "../lib/storyboardPrompt";
 import { ImageNodeToolbar } from "./ImageNodeToolbar";
+import { MediaPickerModal } from "../components/MediaPickerModal";
 import { ImageEditModal } from "../components/ImageEditModal";
 import {
   MentionAutocomplete,
@@ -83,6 +83,7 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
     useBoardStore.getState().updateNodeData(rfId, {
@@ -107,32 +108,35 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
         },
       }).catch(() => {});
     }
-    // Background vision call — fire-and-forget. Sets aiBrief on the node
-    // when it returns; failure is silent.
-    requestAutoBrief(rfId, newMediaId);
+    // Vision auto-analysis on upload/replace is DISABLED — see
+    // src/api/autoBrief.ts for how to restore it.
   }
 
-  async function uploadOwn(file: File) {
+  // Returns whether the upload landed — the media picker keeps itself open
+  // on `false` so the error message stays readable.
+  async function uploadOwn(file: File): Promise<boolean> {
     setError(null);
     setUploading(true);
     try {
       const projectId = await useGenerationStore.getState().ensureProjectId();
       if (!projectId) {
         setError("no project");
-        return;
+        return false;
       }
       const dbId = parseInt(rfId, 10);
       const resp = await uploadImage(file, projectId, isNaN(dbId) ? undefined : dbId);
       persistMedia(resp.media_id, resp.aspect_ratio);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "upload failed");
+      return false;
     } finally {
       setUploading(false);
     }
   }
 
   function onPick() {
-    fileInputRef.current?.click();
+    setPickerOpen(true);
   }
 
   function onChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -164,6 +168,22 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
   function openGenerate() {
     useGenerationStore.getState().openGenerationDialog(rfId, data.prompt ?? "");
   }
+
+  // Replace / Upload both open the media picker: pick something already
+  // in the library (instant — the media id is reused as-is) or bring a
+  // new file in from the right-hand panel.
+  const mediaPicker = pickerOpen ? (
+    <MediaPickerModal
+      uploading={uploading}
+      currentMediaId={mediaId}
+      onClose={() => setPickerOpen(false)}
+      onPickExisting={(pickedId, aspect) => {
+        setPickerOpen(false);
+        persistMedia(pickedId, aspect);
+      }}
+      onUploadFile={uploadOwn}
+    />
+  ) : null;
 
   // Filled state — show the avatar circle. Drag-drop on the avatar replaces it.
   if (mediaId) {
@@ -212,6 +232,7 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
           style={{ display: "none" }}
           onChange={onChange}
         />
+        {mediaPicker}
         {error && <p className="character-drop__error" role="alert">{error}</p>}
       </div>
     );
@@ -261,7 +282,8 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
         style={{ display: "none" }}
         onChange={onChange}
       />
-      {error && <p className="character-drop__error" role="alert">{error}</p>}
+      {mediaPicker}
+        {error && <p className="character-drop__error" role="alert">{error}</p>}
     </div>
   );
 }
@@ -635,6 +657,7 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
   // branches change which JSX renders but not which hooks run.
   const [picker, setPicker] = useState<VariantPickerState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
     useBoardStore.getState().updateNodeData(rfId, {
@@ -662,30 +685,33 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
         },
       }).catch(() => {});
     }
-    requestAutoBrief(rfId, newMediaId);
   }
 
-  async function uploadOwn(file: File) {
+  // Returns whether the upload landed — the media picker keeps itself open
+  // on `false` so the error message stays readable.
+  async function uploadOwn(file: File): Promise<boolean> {
     setError(null);
     setUploading(true);
     try {
       const projectId = await useGenerationStore.getState().ensureProjectId();
       if (!projectId) {
         setError("no project");
-        return;
+        return false;
       }
       const dbId = parseInt(rfId, 10);
       const resp = await uploadImage(file, projectId, isNaN(dbId) ? undefined : dbId);
       persistMedia(resp.media_id, resp.aspect_ratio);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "upload failed");
+      return false;
     } finally {
       setUploading(false);
     }
   }
 
   function onPick() {
-    fileInputRef.current?.click();
+    setPickerOpen(true);
   }
 
   function onChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -728,6 +754,22 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
     />
   );
 
+  // Replace / Upload both open the media picker: pick something already
+  // in the library (instant — the media id is reused as-is) or bring a
+  // new file in from the right-hand panel.
+  const mediaPicker = pickerOpen ? (
+    <MediaPickerModal
+      uploading={uploading}
+      currentMediaId={ids[0] ?? undefined}
+      onClose={() => setPickerOpen(false)}
+      onPickExisting={(pickedId, aspect) => {
+        setPickerOpen(false);
+        persistMedia(pickedId, aspect);
+      }}
+      onUploadFile={uploadOwn}
+    />
+  ) : null;
+
   // Empty state — same action-bar UX as character/visual_asset so users
   // can drop a reference image directly onto an image node instead of
   // having to wire one up via a separate visual_asset node.
@@ -765,6 +807,7 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
         </div>
         <BriefHint data={data} />
         {hiddenFileInput}
+        {mediaPicker}
         {error && <p className="character-drop__error" role="alert">{error}</p>}
       </div>
     );
@@ -897,7 +940,8 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
       )}
       <BriefHint data={data} />
       {hiddenFileInput}
-      {error && <p className="character-drop__error" role="alert">{error}</p>}
+      {mediaPicker}
+        {error && <p className="character-drop__error" role="alert">{error}</p>}
     </div>
   );
 }
@@ -1154,6 +1198,7 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
   const [linkMode, setLinkMode] = useState(false);
   const [linkValue, setLinkValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const refInputRef = useRef<HTMLInputElement>(null);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
@@ -1182,23 +1227,26 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
         },
       }).catch(() => {});
     }
-    requestAutoBrief(rfId, newMediaId);
   }
 
-  async function uploadOwn(file: File) {
+  // Returns whether the upload landed — the media picker keeps itself open
+  // on `false` so the error message stays readable.
+  async function uploadOwn(file: File): Promise<boolean> {
     setError(null);
     setUploading(true);
     try {
       const projectId = await useGenerationStore.getState().ensureProjectId();
       if (!projectId) {
         setError("no project");
-        return;
+        return false;
       }
       const dbId = parseInt(rfId, 10);
       const resp = await uploadImage(file, projectId, isNaN(dbId) ? undefined : dbId);
       persistMedia(resp.media_id, resp.aspect_ratio);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "upload failed");
+      return false;
     } finally {
       setUploading(false);
     }
@@ -1263,6 +1311,22 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
     useGenerationStore.getState().openGenerationDialog(rfId, data.prompt ?? "");
   }
 
+  // Replace / Upload both open the media picker: pick something already
+  // in the library (instant — the media id is reused as-is) or bring a
+  // new file in from the right-hand panel.
+  const mediaPicker = pickerOpen ? (
+    <MediaPickerModal
+      uploading={uploading}
+      currentMediaId={mediaId}
+      onClose={() => setPickerOpen(false)}
+      onPickExisting={(pickedId, aspect) => {
+        setPickerOpen(false);
+        persistMedia(pickedId, aspect);
+      }}
+      onUploadFile={uploadOwn}
+    />
+  ) : null;
+
   if (!mediaId) {
     return (
       <div className="node-body node-body--visual-asset">
@@ -1316,7 +1380,7 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
               <button
                 type="button"
                 className="visual-asset__action"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setPickerOpen(true)}
                 disabled={uploading}
               >
                 {uploading ? "Uploading…" : "Upload"}
@@ -1354,6 +1418,7 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
             e.target.value = "";
           }}
         />
+        {mediaPicker}
         {error && <p className="visual-asset__error">{error}</p>}
       </div>
     );
@@ -1385,7 +1450,7 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
             className="image-replace-btn nodrag"
             onClick={(e) => {
               e.stopPropagation();
-              fileInputRef.current?.click();
+              setPickerOpen(true);
             }}
             disabled={uploading}
             style={{
@@ -1483,7 +1548,8 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
           e.target.value = "";
         }}
       />
-      {error && <p className="visual-asset__error">{error}</p>}
+      {mediaPicker}
+        {error && <p className="visual-asset__error">{error}</p>}
     </div>
   );
 }
