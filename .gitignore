@@ -50,3 +50,7 @@ coverage/
 # Local backup snapshots
 *.before-*
 *.backup
+
+# Captured Flow boq payloads — contain session credentials (at=, reCAPTCHA token).
+/flow-capture*.md
+/flow-capture*.json

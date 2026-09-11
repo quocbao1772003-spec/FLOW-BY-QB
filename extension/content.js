@@ -3,11 +3,21 @@
  * Injects injected.js into MAIN world and forwards GET_CAPTCHA messages.
  */
 (function () {
-  const s = document.createElement('script');
-  s.src = chrome.runtime.getURL('injected.js');
-  s.onload = () => s.remove();
-  (document.head || document.documentElement).appendChild(s);
+  for (const file of ['injected.js', 'boq-monitor.js']) {
+    const s = document.createElement('script');
+    s.src = chrome.runtime.getURL(file);
+    s.onload = () => s.remove();
+    (document.head || document.documentElement).appendChild(s);
+  }
 })();
+
+// The monitor lives in the MAIN world and cannot talk to the extension
+// directly; relay its samples across the isolated-world boundary.
+window.addEventListener('FLOWBOARD_BOQ_SAMPLE', (e) => {
+  try {
+    chrome.runtime.sendMessage({ type: 'BOQ_SAMPLE', sample: e.detail });
+  } catch (err) { /* worker asleep — the next sample will do */ }
+});
 
 chrome.runtime.onMessage.addListener((msg, _, reply) => {
   if (msg.type !== 'GET_CAPTCHA') return;

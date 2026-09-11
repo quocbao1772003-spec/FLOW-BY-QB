@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Flowboard Bridge",
-  "version": "0.0.6",
-  "description": "Local bridge that proxies Flowboard agent requests to authenticated Google Flow sessions (flow.google.com + labs.google).",
+  "version": "0.1.0",
+  "description": "Local bridge for Flowboard: proxies agent requests into an authenticated Google Flow session (flow.google.com boq RPC + labs.google).",
   "permissions": [
     "storage",
     "alarms",
@@ -41,7 +41,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js"
+        "injected.js",
+        "boq-monitor.js"
       ],
       "matches": [
         "https://labs.google/*",

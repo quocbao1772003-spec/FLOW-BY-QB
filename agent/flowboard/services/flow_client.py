@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import secrets
 import time
 import uuid
@@ -35,6 +36,21 @@ logger = logging.getLogger(__name__)
 # need to plumb it through from the extension on every call.
 _FLOW_API_KEY = "AIzaSyBtrm0o5ab1c-Ec8ZuLcGt3oJAA5VWt3pY"
 _FLOW_CREDITS_URL = "https://aisandbox-pa.googleapis.com/v1/credits"
+
+# Google retired /v1/credits together with the rest of aisandbox-pa in Sep 2026
+# (see docs/BOQ-MIGRATION.md), so the authoritative tier lookup below can never
+# succeed again: it needs a Bearer token that is no longer issued.
+#
+# The value is now INERT for generation. The boq `batchexecute` payload the
+# extension sends carries no tier field at all, so guessing it wrong cannot
+# downgrade anyone — the old warning about silently serving Pro to an Ultra
+# account no longer applies. What the tier still does is gate dispatch in
+# worker/processor.py (`paygate_tier_unknown`) and label the account panel.
+#
+# Without a fallback that gate can never open and every generate dies before
+# it reaches the extension. Override with FLOWBOARD_PAYGATE_TIER if the label
+# matters to you.
+_TIER_FALLBACK = os.getenv("FLOWBOARD_PAYGATE_TIER", "PAYGATE_TIER_ONE")
 # Minimum gap between paygate-tier refreshes when the same Bearer token
 # is re-delivered. Tier rarely changes; 60 s is fine for AccountPanel
 # freshness and tames the credits-fetch storm an old extension can
@@ -73,6 +89,13 @@ class FlowClient:
         self._user_info: Optional[dict] = None
         # Paygate tier authoritative from /v1/credits + sku for display.
         self._paygate_tier: Optional[str] = None
+        # Last-known payload-template health, pushed by the extension. Feeds
+        # the failure report — "was the template stale when this broke?" is
+        # the first question worth answering.
+        self._boq_template: Optional[dict] = None
+        # A few recent outbound requests, so a failure can be described in
+        # terms of what was actually sent. Capped; holds no response bodies.
+        self._recent_requests: dict[str, dict] = {}
         self._sku: Optional[str] = None  # e.g. "WS_ULTRA" / "WS_PRO"
         self._credits: Optional[int] = None
         self._request_count = 0
@@ -112,7 +135,10 @@ class FlowClient:
 
     @property
     def paygate_tier(self) -> Optional[str]:
-        return self._paygate_tier
+        # Prefer a real answer when we have one (a cached tier from before the
+        # API was retired, or a future source). Otherwise fall back so the
+        # dispatch gate in worker/processor.py can still open.
+        return self._paygate_tier or _TIER_FALLBACK
 
     @property
     def sku(self) -> Optional[str]:
@@ -222,6 +248,11 @@ class FlowClient:
                     # see. Don't await: WS handler must stay responsive.
                     asyncio.create_task(self.fetch_paygate_tier())
             return
+        if t == "boq_template":
+            status = data.get("status")
+            if isinstance(status, dict):
+                self._boq_template = status
+            return
         if t == "user_info":
             info = data.get("userInfo")
             if isinstance(info, dict):
@@ -269,6 +300,23 @@ class FlowClient:
             self._failed_count += 1
             msg = data.get("error") or f"API_{status}"
             self._last_error = str(msg)[:200]
+            # A BOQ_* error means the boq shim itself could not complete —
+            # Google very likely changed something. Ask the configured LLM CLI
+            # to write up what happened while the evidence is still to hand.
+            if str(msg).startswith("BOQ_"):
+                try:
+                    from flowboard.services import boq_doctor
+
+                    boq_doctor.schedule_report({
+                        "error": str(msg),
+                        "http_status": status,
+                        "request": self._recent_requests.get(req_id),
+                        "template": self._boq_template,
+                        "extension_connected": self.connected,
+                        "paygate_tier": self._paygate_tier,
+                    })
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("boq_doctor hook failed: %s", exc)
             fut.set_result(data)
         else:
             self._success_count += 1
@@ -299,6 +347,7 @@ class FlowClient:
             return {"error": "extension_disconnected"}
 
         req_id = str(uuid.uuid4())
+        self._remember_request(req_id, method, params)
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[req_id] = fut
         self._request_count += 1
@@ -346,6 +395,31 @@ class FlowClient:
         if captcha_action:
             params["captchaAction"] = captcha_action
         return await self._send("api_request", params, timeout=timeout)
+
+    def _remember_request(self, req_id: str, method: str, params: dict) -> None:
+        """Keep a slim description of an in-flight call so a later failure can
+        be reported in terms of what was sent. Bodies are summarised, never
+        stored whole — an upload body is a third of a megabyte of base64."""
+        body = params.get("body")
+        summary: Any = None
+        if isinstance(body, dict):
+            summary = {}
+            for k, v in body.items():
+                if isinstance(v, str) and len(v) > 200:
+                    summary[k] = f"<{len(v)} chars>"
+                elif k == "requests" and isinstance(v, list):
+                    summary[k] = f"<{len(v)} request item(s)>"
+                else:
+                    summary[k] = v
+        self._recent_requests[req_id] = {
+            "method": method,
+            "url": params.get("url"),
+            "captcha_action": params.get("captchaAction"),
+            "body": summary,
+        }
+        if len(self._recent_requests) > 12:
+            for stale in list(self._recent_requests)[:-12]:
+                self._recent_requests.pop(stale, None)
 
     async def trpc_request(
         self,
