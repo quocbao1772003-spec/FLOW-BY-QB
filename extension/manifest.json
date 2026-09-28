@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Flowboard Bridge",
-  "version": "0.1.0",
-  "description": "Local bridge for Flowboard: proxies agent requests into an authenticated Google Flow session (flow.google.com boq RPC + labs.google).",
+  "version": "0.1.1",
+  "description": "Local bridge for Google Flow — runs batchexecute RPCs inside a signed-in flow.google.com tab and mints reCAPTCHA for Flowboard.",
   "permissions": [
     "storage",
     "alarms",
@@ -12,11 +12,12 @@
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "https://aisandbox-pa.googleapis.com/*",
-    "https://labs.google/*",
     "https://flow.google.com/*",
-    "http://127.0.0.1:8101/*",
-    "http://localhost:8101/*"
+    "https://flow-content.google/*",
+    "https://labs.google/*",
+    "https://aisandbox-pa.googleapis.com/*",
+    "http://127.0.0.1:8434/*",
+    "http://localhost:8434/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -28,25 +29,36 @@
   "content_scripts": [
     {
       "matches": [
+        "https://flow.google.com/*",
         "https://labs.google/fx/tools/flow*",
-        "https://labs.google/fx/*/tools/flow*",
-        "https://flow.google.com/*"
+        "https://labs.google/fx/*/tools/flow*"
       ],
       "js": [
         "content.js"
       ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://flow.google.com/*",
+        "https://labs.google/fx/tools/flow*",
+        "https://labs.google/fx/*/tools/flow*"
+      ],
+      "js": [
+        "injected.js"
+      ],
+      "world": "MAIN",
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js",
-        "boq-monitor.js"
+        "injected.js"
       ],
       "matches": [
-        "https://labs.google/*",
-        "https://flow.google.com/*"
+        "https://flow.google.com/*",
+        "https://labs.google/*"
       ]
     }
   ],
