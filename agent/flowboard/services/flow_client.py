@@ -252,6 +252,12 @@ class FlowClient:
             status = data.get("status")
             if isinstance(status, dict):
                 self._boq_template = status
+                _write_boq_diag("boq_template.json", status)
+            return
+        if t == "boq_trace":
+            trace = data.get("trace")
+            if isinstance(trace, dict):
+                _append_boq_trace(trace)
             return
         if t == "user_info":
             info = data.get("userInfo")
@@ -465,3 +471,37 @@ flow_client = FlowClient()
 
 def get_flow_client() -> FlowClient:
     return flow_client
+
+
+# ── boq diagnostics on disk ───────────────────────────────────────────────
+# The extension forwards (redacted) copies of the batchexecute calls the Flow
+# app itself makes, plus our own refused calls. Kept under
+# storage/diagnostics so a payload change by Google can be diffed offline.
+_BOQ_TRACE_KEEP = 60
+
+
+def _diag_dir():
+    from flowboard.config import STORAGE_DIR
+
+    d = STORAGE_DIR / "diagnostics"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _write_boq_diag(name: str, obj) -> None:
+    try:
+        (_diag_dir() / name).write_text(
+            json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("boq diag write failed: %s", exc)
+
+
+def _append_boq_trace(trace: dict) -> None:
+    try:
+        path = _diag_dir() / "boq_traces.jsonl"
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        lines.append(json.dumps(trace, ensure_ascii=False))
+        path.write_text("\n".join(lines[-_BOQ_TRACE_KEEP:]) + "\n", encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("boq trace write failed: %s", exc)

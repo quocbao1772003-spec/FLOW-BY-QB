@@ -193,3 +193,88 @@ def _ext_from_mime(mime: str) -> str:
         if m == mime:
             return ext.lstrip(".")
     return "png"
+
+
+# ── stale-ref recovery (gen_image / edit_image) ───────────────────────────
+#
+# Image generation sends ref media ids straight to Flow. When Flow can no
+# longer see one of them in the target project — deleted from the Flow
+# library, garbage-collected, or originally uploaded under another project —
+# the boq RPC answers with status 5 (NOT_FOUND) and no media. Nothing on the
+# board changes, so every retry fails identically until the refs are
+# re-uploaded. These helpers do exactly that, from the bytes Flowboard
+# already caches locally.
+
+
+def substitute_cached(media_ids: list[str], project_id: str) -> list[str]:
+    """Swap each id for the project-local copy recorded earlier, if any.
+    Ids with no mapping pass through unchanged. Never touches the network."""
+    if not media_ids or not project_id:
+        return list(media_ids or [])
+    out: list[str] = []
+    with get_session() as s:
+        for mid in media_ids:
+            row = s.exec(
+                select(MediaProjectMapping)
+                .where(MediaProjectMapping.original_media_id == mid)
+                .where(MediaProjectMapping.project_id == project_id)
+            ).first()
+            out.append(row.project_local_media_id if row else mid)
+    return out
+
+
+def _upsert_mapping(original_media_id: str, project_id: str, new_media_id: str) -> None:
+    with get_session() as s:
+        row = s.exec(
+            select(MediaProjectMapping)
+            .where(MediaProjectMapping.original_media_id == original_media_id)
+            .where(MediaProjectMapping.project_id == project_id)
+        ).first()
+        if row:
+            row.project_local_media_id = new_media_id
+            s.add(row)
+        else:
+            s.add(
+                MediaProjectMapping(
+                    original_media_id=original_media_id,
+                    project_id=project_id,
+                    project_local_media_id=new_media_id,
+                )
+            )
+        s.commit()
+
+
+async def force_reupload(
+    media_ids: list[str], project_id: str
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Re-upload every id's cached bytes under ``project_id``, ignoring any
+    existing mapping, and record the new ids. Returns ``(new_ids, failures)``
+    with ``new_ids`` in input order (failed refs are dropped)."""
+    new_ids: list[str] = []
+    failures: list[tuple[str, str]] = []
+    for mid in media_ids:
+        try:
+            bytes_data, mime = await _load_bytes(mid)
+            if bytes_data is None:
+                raise MediaSyncError("no local copy of the image to re-upload")
+            resp = await get_flow_sdk().upload_image(
+                image_base64=base64.b64encode(bytes_data).decode("ascii"),
+                mime_type=mime,
+                project_id=project_id,
+                file_name=f"ref_{mid}.{_ext_from_mime(mime)}",
+            )
+            if resp.get("error"):
+                raise MediaSyncError(f"flow upload failed: {resp['error']}")
+            new_id = resp.get("media_id")
+            if not isinstance(new_id, str) or not new_id:
+                raise MediaSyncError("flow upload returned no media_id")
+            try:
+                _upsert_mapping(mid, project_id, new_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("could not record re-upload mapping for %s", mid)
+            logger.info("ref re-upload: %s -> %s under project %s", mid, new_id, project_id)
+            new_ids.append(new_id)
+        except MediaSyncError as exc:
+            failures.append((mid, str(exc)))
+            logger.warning("ref re-upload failed for %s: %s", mid, exc)
+    return new_ids, failures

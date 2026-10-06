@@ -853,6 +853,28 @@ function boqExtractSampleValues(inner, projectId) {
   };
   walk(inner, []);
 
+  // Prefer ids that sit in a reference-input entry — [id, null, …, <type>] —
+  // so an unrelated lowercase uuid Google adds to the payload (a workflow or
+  // scene id, say) is never mistaken for the reference slot.
+  if (mediaIds.length) {
+    const shaped = [];
+    const scan = (n) => {
+      if (!Array.isArray(n)) return;
+      if (n.length >= 2 && typeof n[0] === 'string' && LOWER_UUID.test(n[0]) && n[0] !== projectId
+          && typeof n[n.length - 1] === 'number'
+          && n.slice(1, -1).every((x) => x === null)) {
+        if (shaped.indexOf(n[0]) === -1) shaped.push(n[0]);
+        return;
+      }
+      for (let i = 0; i < n.length; i++) scan(n[i]);
+    };
+    scan(inner);
+    if (shaped.length) {
+      mediaIds.length = 0;
+      for (const id of shaped) mediaIds.push(id);
+    }
+  }
+
   // The batch id is the uppercase uuid sitting outside the per-item block —
   // in every capture it is the last top-level element.
   const tail = inner[inner.length - 1];
@@ -990,6 +1012,51 @@ function boqOnSample(sample) {
     'rpc=' + rpcId, 'bl=' + bl, 'refs=' + learned.template.hadInputs);
 }
 
+// ─── Diagnostics: forward redacted batchexecute traces to the agent ───────
+// The agent writes them to storage/diagnostics/boq_traces.jsonl so a payload
+// change by Google can be read and diffed without DevTools. Captcha tokens,
+// image bytes and the XSRF `at` value are blanked before anything leaves.
+
+function boqRedact(x) {
+  if (typeof x === 'string') {
+    if (x.length > 500) return '<LONG_' + x.length + '>';
+    if (x.length > 2 && (x[0] === '[' || x[0] === '{')) {
+      try { return { __json: boqRedact(JSON.parse(x)) }; } catch (e) { /* plain */ }
+    }
+    return x;
+  }
+  if (Array.isArray(x)) return x.map(boqRedact);
+  if (x && typeof x === 'object') {
+    const o = {};
+    for (const k of Object.keys(x)) o[k] = boqRedact(x[k]);
+    return o;
+  }
+  return x;
+}
+
+function boqForwardTrace(kind, t) {
+  let rpcids = null, sourcePath = null, bl = null, freq = null;
+  try {
+    const u = new URL(t.url, 'https://flow.google.com');
+    rpcids = u.searchParams.get('rpcids');
+    sourcePath = u.searchParams.get('source-path');
+    bl = u.searchParams.get('bl');
+  } catch (e) { /* ignore */ }
+  try {
+    const f = t.body ? new URLSearchParams(t.body).get('f.req') : null;
+    freq = f ? boqRedact(JSON.parse(f)) : (t.inner ? boqRedact(t.inner) : null);
+  } catch (e) { freq = '<UNPARSEABLE>'; }
+  const head = String(t.head || '').replace(/[A-Za-z0-9+/_=-]{500,}/g, (m) => '<LONG_' + m.length + '>');
+  const out = {
+    kind, time: new Date().toISOString(), rpcids, sourcePath, bl,
+    status: t.status == null ? null : t.status, hasMedia: !!t.hasMedia,
+    error: t.error || null, freq, head: head.slice(0, 3000),
+  };
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({ type: 'boq_trace', trace: out })); } catch (e) { /* closing */ }
+  }
+}
+
 // ─── Identity, read from the Flow page ──────────────────────────────────
 //
 // The account panel used to be filled from Google's userinfo endpoint, called
@@ -1111,15 +1178,18 @@ async function boqGenerateInPage(cfg) {
 
   // The captcha token rides inside the payload at [..., [token, 1]] — the
   // same array appears twice, once per request item and once at top level.
-  const ctx = [null, cfg.surfaceId, null, null, null, cfg.projectId,
+  // Context slot 4 is the asset being edited (the BASE_IMAGE of a refine);
+  // null for a fresh generate. Required by the Flow build of Oct 2026.
+  const ctx = [null, cfg.surfaceId, null, null, cfg.assetId || null, cfg.projectId,
                null, null, null, null, [token, 1]];
 
   // Slot 2 of the request item carries the reference images (i2i). Text-only
   // sends null there; conditioning on existing media sends one entry per
-  // image. The trailing 1 is the input's role — the only value observed so
-  // far, on a plain reference.
+  // image. The trailing number is the input's role: 1 = reference,
+  // 2 = base image of an edit.
+  const types = Array.isArray(cfg.inputTypes) ? cfg.inputTypes : [];
   const inputs = Array.isArray(cfg.mediaInputs) && cfg.mediaInputs.length
-    ? cfg.mediaInputs.map((mid) => [mid, null, null, null, 1])
+    ? cfg.mediaInputs.map((mid, k) => [mid, null, null, null, types[k] === 2 ? 2 : 1])
     : null;
 
   let inner;
@@ -1135,6 +1205,12 @@ async function boqGenerateInPage(cfg) {
       if (Array.isArray(n)) n[p[p.length - 1]] = val;
     };
     const P = cfg.template.paths;
+    if (!P.inputs && Array.isArray(cfg.mediaInputs) && cfg.mediaInputs.length) {
+      // Learned from a text-only generate: it has no slot for references, and
+      // sending without them would silently ignore the user's images.
+      return { error: 'TEMPLATE_NO_REF_SLOT', usedTemplate: true,
+               head: 'learned template has no reference slot — generate one image WITH a reference in the Flow tab to relearn' };
+    }
     inner = clone(cfg.template.skeleton);
     setAt(inner, P.prompt, cfg.prompt);
     for (const p of P.project) setAt(inner, p, cfg.projectId);
@@ -1149,11 +1225,15 @@ async function boqGenerateInPage(cfg) {
         : null);
     }
   } else {
-    // No template learned yet — the layout captured by hand in Sep 2026.
+    // No template learned yet — the layout as of the Flow build of Oct 2026
+    // (matches flowkit's fix of 5 Oct). Slot 12 USED to carry a fresh client
+    // uuid; Flow now resolves that slot as an existing entity, so a random
+    // value there is answered with status 5 NOT_FOUND. It must be null.
+    // Slot 4 is the aspect ratio (1 square, 2 9:16, 3 16:9, 4 3:4, 5 4:3).
     inner = [
       null,
-      [[null, null, inputs, cfg.seed, 1, cfg.modelTag, null, ctx,
-        [[[cfg.prompt]]], null, null, null, uuid(), uuid()]],
+      [[null, null, inputs, cfg.seed, cfg.aspect || 1, cfg.modelTag, null, ctx,
+        [[[cfg.prompt]]], null, null, null, null, uuid()]],
       1,
       ctx,
       // Trailing slot is a BATCH id, not a per-request id: the app's own
@@ -1254,7 +1334,24 @@ async function boqGenerateInPage(cfg) {
         .replace(/\\\//g, '/');
     }
   }
-  if (!mediaUrl) return { error: 'NO_MEDIA_URL', head: String(text).slice(0, 400) };
+  if (!mediaUrl) {
+    // A refused call comes back as a wrb.fr frame with a null payload and a
+    // gRPC-style status array, e.g. ["wrb.fr","ogiZ0b",null,null,null,[5],…].
+    // Name the status so the agent can react to it (5 = NOT_FOUND means a
+    // reference image or the project is unknown to Flow) instead of seeing a
+    // generic NO_MEDIA_URL.
+    const st = String(text).match(/\["wrb\.fr","[^"]*",null,null,null,\[(\d+)\]/);
+    if (st) {
+      const NAMES = { 3: 'INVALID_ARGUMENT', 5: 'NOT_FOUND', 7: 'PERMISSION_DENIED',
+                      8: 'RESOURCE_EXHAUSTED', 9: 'FAILED_PRECONDITION', 13: 'INTERNAL',
+                      14: 'UNAVAILABLE', 16: 'UNAUTHENTICATED' };
+      const code = Number(st[1]);
+      return { error: 'RPC_' + code + '_' + (NAMES[code] || 'STATUS'), head: String(text).slice(0, 400),
+               usedTemplate: !!cfg.template, sentUrl: url, sentInner: inner };
+    }
+    return { error: 'NO_MEDIA_URL', head: String(text).slice(0, 400), usedTemplate: !!cfg.template,
+             sentUrl: url, sentInner: inner };
+  }
   const m = mediaUrl.match(/\/image\/([0-9a-fA-F-]{36})/);
   if (!m) return { error: 'NO_MEDIA_ID', head: mediaUrl.slice(0, 200) };
   return { mediaId: m[1], url: mediaUrl };
@@ -1535,7 +1632,10 @@ async function boqWaitForApp(tabId, timeoutMs = 45000) {
   return false;
 }
 
-async function boqRunOne(tabId, projectId, prompt, mediaInputs, groupId) {
+async function boqRunOne(tabId, projectId, prompt, mediaInputs, groupId, opts) {
+  opts = opts || {};
+  const job = opts.job || {};
+  const tpl = opts.noTemplate ? null : boqTemplate;
   const [out] = await chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
@@ -1546,15 +1646,51 @@ async function boqRunOne(tabId, projectId, prompt, mediaInputs, groupId) {
       mediaInputs: mediaInputs || [],
       seed:       boqSeed(),
       groupId:    groupId || null,
-      template:   boqTemplate,
-      endpoint:   (boqTemplate && boqTemplate.endpoint) || BOQ_ENDPOINT_PATH,
-      rpcId:      (boqTemplate && boqTemplate.rpcId) || BOQ_RPC_IMAGE,
+      template:   tpl,
+      endpoint:   (tpl && tpl.endpoint) || BOQ_ENDPOINT_PATH,
+      rpcId:      (tpl && tpl.rpcId) || BOQ_RPC_IMAGE,
       siteKey:    BOQ_SITE_KEY,
-      modelTag:   BOQ_IMAGE_MODEL_TAG,
+      modelTag:   opts.modelTag || job.model || BOQ_IMAGE_MODEL_TAG,
+      inputTypes: job.types || [],
+      assetId:    job.assetId || null,
+      aspect:     job.aspect || 1,
       surfaceId:  BOQ_SURFACE_ID,
     }],
   });
   return (out && out.result) || { error: 'NO_RESULT' };
+}
+
+/** One variant, with a single fallback: when a learned template gets the
+ *  call refused outright (NOT_FOUND / INVALID_ARGUMENT — no credits are spent
+ *  on a refusal) retry once on the hand-captured layout. If that succeeds the
+ *  template was mislearned, so drop it; the next manual generate in the Flow
+ *  tab will teach a fresh one. */
+function boqTraceOurs(r) {
+  if (r && r.error && r.sentInner) {
+    try {
+      boqForwardTrace(r.usedTemplate ? 'ours-template' : 'ours-builtin',
+        { url: r.sentUrl, inner: [[[null, JSON.stringify(r.sentInner)]]], head: r.head, error: r.error });
+    } catch (e) { /* ignore */ }
+  }
+  return r;
+}
+
+async function boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, groupId, job) {
+  const r = boqTraceOurs(await boqRunOne(tabId, projectId, prompt, mediaInputs, groupId, { job }));
+  const refused = r && (r.error === 'RPC_5_NOT_FOUND' || r.error === 'RPC_3_INVALID_ARGUMENT'
+                        || r.error === 'TEMPLATE_NO_REF_SLOT');
+  if (!refused || !r.usedTemplate) return r;
+  console.warn('[Flowboard] template call refused (' + r.error + ') — retrying on the built-in layout');
+  const r2 = boqTraceOurs(await boqRunOne(tabId, projectId, prompt, mediaInputs, groupId, { job, noTemplate: true }));
+  if (r2 && !r2.error) {
+    console.warn('[Flowboard] built-in layout worked — discarding the learned template');
+    boqTemplate = null;
+    boqHealth = { failures: 0, stale: false, reason: null,
+                  lastLearnError: 'DISCARDED_AFTER_' + r.error };
+    boqSaveTemplate();
+    return r2;
+  }
+  return r;  // both refused: the problem is the data (refs/project), not the layout
 }
 
 async function boqUploadOne(tabId, projectId, imageBase64, mimeType, fileName) {
@@ -1719,10 +1855,26 @@ async function handleBatchGenerateImagesViaBoq(msg) {
       const prompt = Array.isArray(parts)
         ? parts.map((p) => (p && typeof p.text === 'string' ? p.text : '')).filter(Boolean).join(' ')
         : '';
-      const inputs = (it && Array.isArray(it.imageInputs) ? it.imageInputs : [])
-        .map((inp) => (inp && typeof inp.name === 'string' ? inp.name : null))
-        .filter(Boolean);
-      return { prompt, inputs };
+      const raw = (it && Array.isArray(it.imageInputs) ? it.imageInputs : [])
+        .filter((inp) => inp && typeof inp.name === 'string' && inp.name);
+      const inputs = raw.map((inp) => inp.name);
+      const types = raw.map((inp) => (inp.imageInputType === 'IMAGE_INPUT_TYPE_BASE_IMAGE' ? 2 : 1));
+      const baseIdx = types.indexOf(2);
+      const ASPECTS = {
+        IMAGE_ASPECT_RATIO_SQUARE: 1, IMAGE_ASPECT_RATIO_PORTRAIT: 2, IMAGE_ASPECT_RATIO_LANDSCAPE: 3,
+        IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR: 4, IMAGE_ASPECT_RATIO_PORTRAIT_FOUR_THREE: 4,
+        IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE: 5,
+      };
+      const MODELS = ['GEM_PIX_2', 'NARWHAL', 'HARBOR_SEAL'];
+      const model = (it && MODELS.indexOf(it.imageModelName) !== -1) ? it.imageModelName : null;
+      return {
+        prompt, inputs,
+        job: {
+          types, model,
+          assetId: baseIdx === -1 ? null : inputs[baseIdx],
+          aspect: (it && ASPECTS[it.imageAspectRatio]) || 1,
+        },
+      };
     })
     .filter((j) => j.prompt)
     .slice(0, BOQ_MAX_VARIANTS);
@@ -1739,14 +1891,20 @@ async function handleBatchGenerateImagesViaBoq(msg) {
     // variants of a single "x4" press.
     const groupId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).toUpperCase();
     const results = await Promise.all(
-      jobs.map((j) => boqRunOne(tab.id, projectId, j.prompt, j.inputs, groupId)),
+      jobs.map((j) => boqRunOneWithFallback(tab.id, projectId, j.prompt, j.inputs, groupId, j.job)),
     );
     const media = [];
     for (const r of results) {
       if (!r || r.error) {
         // `head` is the first slice of whatever Flow actually replied. Without
         // it a bare NO_MEDIA_URL / HTTP_400 is undiagnosable from the node.
-        const detail = (r && r.head) ? ' — ' + String(r.head).replace(/\s+/g, ' ').slice(0, 220) : '';
+        const tplNote = boqTemplate
+          ? ' | tpl bl=' + (boqTemplate.bl || '?') + ' refs=' + (boqTemplate.hadInputs ? 'y' : 'n')
+          : ' | tpl=builtin';
+        const hint = (r && /^RPC_|^TEMPLATE_/.test(String(r.error)))
+          ? ' | FIX: mở tab Flow của project, tự tạo 1 ảnh CÓ ảnh tham chiếu để extension học lại khuôn mới của Google, rồi chạy lại'
+          : '';
+        const detail = ((r && r.head) ? ' — ' + String(r.head).replace(/\s+/g, ' ').slice(0, 220) : '') + tplNote + hint;
         boqMarkFailure((r && r.error) || 'UNKNOWN');
         return fail(502, 'BOQ_' + ((r && r.error) || 'UNKNOWN') + detail);
       }
@@ -1868,6 +2026,11 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
     try { boqOnSample(msg.sample || {}); } catch (e) {
       console.warn('[Flowboard] sample rejected:', (e && e.message) || e);
     }
+    return false;
+  }
+
+  if (msg.type === 'BOQ_TRACE') {
+    try { boqForwardTrace('app', msg.trace || {}); } catch (e) { /* ignore */ }
     return false;
   }
 

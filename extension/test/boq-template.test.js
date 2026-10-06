@@ -112,5 +112,22 @@ check("old template no longer round-trips on the new shape",
 check("new template does",
   boqVerifyTemplate(learned2.template, { inner: inner2, values: values2 }).ok);
 
+
+console.log("an unrelated lowercase uuid in the payload is not taken for a reference");
+{
+  const ctx = [null, 22, null, null, null, PROJECT, null, null, null, null, [TOKEN, 1]];
+  const REF1 = "c21a6286-cc99-4bd6-a8ce-55f0cb931d7b";
+  const REF2 = "aa1a6286-cc99-4bd6-a8ce-55f0cb931d7c";
+  const item = [null, "0f0f0f0f-1111-4222-8333-444455556666",
+    [[REF1, null, null, null, 1], [REF2, null, null, null, 1]],
+    1835000232, 1, "GEM_PIX_2", null, ctx, [[["prompt here"]]],
+    null, null, null, "8231A96B-A377-4472-8851-112DBFDFD04F", "510CAE63-781E-4E04-8B3E-4A27DD997685"];
+  const inner2 = [null, [item], 1, ctx, [GROUP]];
+  const v2 = boqExtractSampleValues(inner2, PROJECT);
+  check("only shaped ids are references", JSON.stringify(v2.mediaIds) === JSON.stringify([REF1, REF2]), JSON.stringify(v2.mediaIds));
+  const l2 = boqLearnTemplate({ rpcId: "ogiZ0b", bl: "b", endpoint: "/e", inner: inner2, values: v2 });
+  check("inputs container is the reference list", JSON.stringify(l2.template.paths.inputs) === "[1,0,2]", JSON.stringify(l2.template.paths.inputs));
+  check("round-trips", boqVerifyTemplate(l2.template, { inner: inner2, values: v2 }).ok);
+}
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

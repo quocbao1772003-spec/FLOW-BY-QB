@@ -18,7 +18,22 @@
 
   const ENDPOINT = '/data/batchexecute';
 
-  function report(url, body, text) {
+  function trace(url, body, status, text) {
+    try {
+      window.dispatchEvent(new CustomEvent('FLOWBOARD_BOQ_TRACE', {
+        detail: {
+          url: String(url),
+          body: typeof body === 'string' ? body.slice(0, 200000) : null,
+          status: status,
+          head: String(text || '').slice(0, 4000),
+          hasMedia: String(text || '').indexOf('flow-content.google') !== -1,
+        },
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function report(url, body, text, status) {
+    trace(url, body, status, text);
     if (typeof body !== 'string' || !body) return;
     if (String(text).indexOf('flow-content.google') === -1) return;
     try {
@@ -38,7 +53,7 @@
     if (this.__fbUrl && String(this.__fbUrl).indexOf(ENDPOINT) !== -1 && !window.__flowboardSelfCall) {
       const self = this;
       this.addEventListener('loadend', function () {
-        try { report(self.__fbUrl, b, String(self.responseText || '')); } catch (e) { /* ignore */ }
+        try { report(self.__fbUrl, b, String(self.responseText || ''), self.status); } catch (e) { /* ignore */ }
       });
     }
     return origSend.apply(this, arguments);
@@ -52,7 +67,7 @@
       && init && typeof init.body === 'string';
     const res = await origFetch.apply(this, arguments);
     if (watch) {
-      res.clone().text().then(function (t) { report(u, init.body, t); }).catch(function () {});
+      res.clone().text().then(function (t) { report(u, init.body, t, res.status); }).catch(function () {});
     }
     return res;
   };

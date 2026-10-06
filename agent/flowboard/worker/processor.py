@@ -57,6 +57,61 @@ async def _handle_proxy(params: dict) -> tuple[dict, Optional[str]]:
     return resp, None
 
 
+# ── stale reference recovery ──────────────────────────────────────────────
+# Flow answers a generate whose reference image it can no longer see with
+# boq status 5 (NOT_FOUND) and no media — surfaced here as
+# `BOQ_RPC_5_NOT_FOUND …` (new extension) or as a raw
+# `["wrb.fr","ogiZ0b",null,null,null,[5],…]` head inside BOQ_NO_MEDIA_URL
+# (older extension). The board still holds the dead id, so every retry fails
+# the same way. Recovery: re-upload the refs from the local cache under the
+# project and try once more.
+_NOT_FOUND_MARKERS = (
+    "RPC_5_NOT_FOUND",
+    "Requested entity was not found",
+)
+
+
+def _is_ref_not_found(err: Optional[str]) -> bool:
+    if not isinstance(err, str) or not err:
+        return False
+    if any(m in err for m in _NOT_FOUND_MARKERS):
+        return True
+    # Raw boq envelope: wrb.fr frame with a null payload and status [5].
+    return '"wrb.fr"' in err and ",null,[5]," in err.replace(" ", "")
+
+
+async def _with_ref_recovery(
+    project_id: str,
+    ref_ids: list[str],
+    dispatch: Callable[[list[str]], Awaitable[dict]],
+) -> dict:
+    """Run ``dispatch(refs)``; on a NOT_FOUND failure re-upload ``ref_ids``
+    under the project and dispatch once more with the fresh ids."""
+    from flowboard.services.media_project_sync import force_reupload, substitute_cached
+
+    if not ref_ids:
+        return await dispatch([])
+    first_try = substitute_cached(ref_ids, project_id)
+    resp = await dispatch(first_try)
+    if not _is_ref_not_found(resp.get("error")):
+        return resp
+    logger.warning(
+        "Flow could not find a reference image (%s) — re-uploading %d ref(s) to project %s",
+        str(resp.get("error"))[:120], len(ref_ids), project_id,
+    )
+    new_ids, failures = await force_reupload(ref_ids, project_id)
+    if failures:
+        detail = "; ".join(f"{m[:8]}: {e}" for m, e in failures)[:150]
+        resp = dict(resp)
+        resp["error"] = f"REF_NOT_FOUND_REUPLOAD_FAILED ({detail}) — {resp.get('error')}"
+        return resp
+    retry = await dispatch(new_ids)
+    if retry.get("error"):
+        retry = dict(retry)
+        retry["error"] = f"{retry['error']} (still failing after re-uploading refs)"
+    return retry
+
+
 async def _handle_create_project(params: dict) -> tuple[dict, Optional[str]]:
     name = params.get("name") or params.get("title") or "Untitled"
     if not isinstance(name, str) or not name.strip():
@@ -117,16 +172,19 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     image_model = params.get("image_model")
     if not isinstance(image_model, str) or not image_model.strip():
         image_model = None
-    resp = await get_flow_sdk().gen_image(
-        prompt=prompt.strip(),
-        project_id=project_id,
-        aspect_ratio=aspect,
-        paygate_tier=tier,
-        ref_media_ids=ref_media_ids,
-        variant_count=variant_count,
-        prompts=per_variant_prompts,
-        image_model=image_model,
-    )
+    async def _dispatch(refs: list[str]) -> dict:
+        return await get_flow_sdk().gen_image(
+            prompt=prompt.strip(),
+            project_id=project_id,
+            aspect_ratio=aspect,
+            paygate_tier=tier,
+            ref_media_ids=refs or None,
+            variant_count=variant_count,
+            prompts=per_variant_prompts,
+            image_model=image_model,
+        )
+
+    resp = await _with_ref_recovery(project_id, ref_media_ids or [], _dispatch)
     if resp.get("error"):
         return resp, str(resp["error"])[:200]
     # Flow returns signed fifeUrls directly in the response — persist them
@@ -421,14 +479,21 @@ async def _handle_edit_image(params: dict) -> tuple[dict, Optional[str]]:
     if not isinstance(image_model, str) or not image_model.strip():
         image_model = None
 
-    resp = await get_flow_sdk().edit_image(
-        prompt=prompt.strip(),
-        project_id=project_id,
-        source_media_id=source_media_id.strip(),
-        ref_media_ids=ref_ids,
-        aspect_ratio=aspect,
-        paygate_tier=tier,
-        image_model=image_model,
+    # The source image is a reference too as far as Flow's lookup goes, so
+    # it rides along in the recovery list (first slot) and is split back out.
+    async def _dispatch(refs: list[str]) -> dict:
+        return await get_flow_sdk().edit_image(
+            prompt=prompt.strip(),
+            project_id=project_id,
+            source_media_id=refs[0],
+            ref_media_ids=refs[1:] or None,
+            aspect_ratio=aspect,
+            paygate_tier=tier,
+            image_model=image_model,
+        )
+
+    resp = await _with_ref_recovery(
+        project_id, [source_media_id.strip(), *(ref_ids or [])], _dispatch
     )
     if resp.get("error"):
         return resp, str(resp["error"])[:200]
