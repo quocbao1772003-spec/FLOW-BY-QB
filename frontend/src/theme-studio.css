@@ -140,15 +140,21 @@ select {
   gap: 9px;
 }
 
-/* Brand mark: a glossy lacquer drop before the wordmark */
+/* Brand mark: the official FB app icon before the wordmark */
 .app-sidebar__brand::before {
   content: "";
-  width: 14px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 50% 50% 46% 46% / 62% 62% 38% 38%;
-  background: var(--accent-gloss);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 10px -2px rgba(var(--accent-rgb), 0.7);
+  border-radius: 6px;
+  background: url("/favicon.svg") center / 100% 100% no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 3px 12px -4px rgba(var(--accent-rgb), 0.55);
+}
+
+.app-sidebar--collapsed .app-sidebar__brand::before {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
 }
 
 .app-sidebar--collapsed .app-sidebar__brand {
