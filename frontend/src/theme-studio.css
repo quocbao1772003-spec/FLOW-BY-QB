@@ -1,0 +1,884 @@
+/* ════════════════════════════════════════════════════════════════════════
+   Flowboard — "Lacquer Studio" visual layer
+   ────────────────────────────────────────────────────────────────────────
+   Purely visual. Loaded after styles.css and only retunes tokens, surfaces,
+   type and states — no layout logic, no behaviour. Delete the import in
+   main.tsx to get the previous look back.
+
+   Idea: a graphite product-photo studio. Everything is quiet neutral
+   chrome so the nail shots carry the colour; the single loud element is
+   the lacquer-rose accent (run button, selection, live states), finished
+   with a gloss highlight like a fresh coat of polish.
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Surfaces — graphite, very slightly warm */
+  --surface-0: #141316;   /* canvas */
+  --surface-1: #1b1a1e;   /* cards, panels */
+  --surface-2: #242328;   /* raised / active */
+  --surface-3: #2e2d33;   /* hover on raised */
+  --surface-4: #3a3940;
+  --surface-modal: #19181c;
+  --surface-rail: #0f0e11; /* app sidebar */
+
+  --fg-0: #f3f1f5;
+  --fg-1: #e2e0e6;
+  --fg-2: #c2bfc9;
+  --fg-3: #9592a0;
+  --fg-4: #67646f;
+
+  --border-alpha-0: rgba(255, 255, 255, 0.055);
+  --border-alpha-1: rgba(255, 255, 255, 0.09);
+  --border-alpha-2: rgba(255, 255, 255, 0.16);
+
+  /* Lacquer rose */
+  --accent-rgb: 242, 85, 143;
+  --accent-0: #f2558f;
+  --accent-1: #e0427c;
+  --accent-2: #b92f63;
+  --accent-soft: #ff9cc3;
+  --accent-tint: rgba(242, 85, 143, 0.12);
+  --accent-gloss: linear-gradient(180deg, #ff86b6 0%, #f2558f 48%, #d33c77 100%);
+
+  --success: #5fd9a3;
+  --warn: #f2c14e;
+  --error: #ff6767;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-base: 10px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+
+  --edge-path: rgba(214, 210, 222, 0.34);
+
+  /* Floating chrome (toolbars, docks, popovers) */
+  --glass-bg: rgba(29, 28, 33, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --glass-blur: blur(18px) saturate(150%);
+  --glass-bg-strong: rgba(27, 26, 31, 0.96);
+
+  --font-ui: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+}
+
+/* xyflow reads these on .react-flow itself, so they must live here */
+.react-flow {
+  --xy-minimap-background-color: transparent;
+  --xy-minimap-mask-background-color: rgba(9, 8, 11, 0.6);
+  --xy-minimap-mask-stroke-color: rgba(var(--accent-rgb), 0.55);
+  --xy-minimap-mask-stroke-width: 1.5;
+  --xy-minimap-node-background-color: rgba(255, 255, 255, 0.2);
+  --xy-minimap-node-stroke-color: transparent;
+  --xy-selection-background-color: rgba(var(--accent-rgb), 0.06);
+  --xy-selection-border: 1px dashed rgba(var(--accent-rgb), 0.6);
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  font-family: var(--font-ui);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(var(--accent-rgb), 0.35);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.75);
+  outline-offset: 2px;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+/* ── App rail (left navigation) ───────────────────────────────────────── */
+
+.app-sidebar {
+  background: var(--surface-rail);
+  border-right: 1px solid var(--border-alpha-0);
+  padding: 16px 10px 12px;
+}
+
+.app-sidebar__brand {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* Brand mark: a glossy lacquer drop before the wordmark */
+.app-sidebar__brand::before {
+  content: "";
+  width: 14px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50% 50% 46% 46% / 62% 62% 38% 38%;
+  background: var(--accent-gloss);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 10px -2px rgba(var(--accent-rgb), 0.7);
+}
+
+.app-sidebar--collapsed .app-sidebar__brand {
+  font-size: 0;
+  gap: 0;
+  padding: 4px;
+}
+
+.app-sidebar__item {
+  position: relative;
+  padding: 9px 11px;
+  border-radius: var(--radius-base);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-3);
+}
+
+.app-sidebar__item:hover {
+  color: var(--fg-0);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.app-sidebar__item--active {
+  color: var(--fg-0);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border-alpha-0);
+}
+
+.app-sidebar__item--active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-0);
+}
+
+.app-sidebar--collapsed .app-sidebar__item--active::before {
+  left: -8px;
+}
+
+.app-sidebar__item--active .app-sidebar__icon {
+  color: var(--accent-soft);
+}
+
+/* ── Canvas ───────────────────────────────────────────────────────────── */
+
+.canvas-wrap {
+  /* Soft studio light falling from the top of the canvas */
+  background:
+    radial-gradient(110% 65% at 50% -8%, rgba(255, 255, 255, 0.035), transparent 62%),
+    var(--surface-0);
+}
+
+.canvas-wrap .react-flow {
+  background: transparent;
+}
+
+.react-flow__background-pattern.dots,
+.react-flow__background circle {
+  fill: rgba(255, 255, 255, 0.075) !important;
+}
+
+/* Wires: solid, thin, ComfyUI-like — the dash pattern read as "draft". */
+.react-flow__edge-path {
+  stroke: var(--edge-path);
+  stroke-width: 1.5;
+  stroke-dasharray: none !important;
+  stroke-linecap: round;
+  transition: stroke 120ms ease;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: rgba(236, 232, 242, 0.6);
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke: var(--accent-0) !important;
+  stroke-width: 2;
+}
+
+.react-flow__connection-path {
+  stroke: var(--accent-0);
+  stroke-width: 1.75;
+  stroke-dasharray: none;
+}
+
+/* ── Floating chrome: one shared "glass dock" treatment ───────────────── */
+
+.left-toolbar,
+.left-toolbar__menu,
+.footer-controls,
+.footer-zoom-menu,
+.statusbar,
+.selection-toolbar,
+.add-node-palette,
+.activity-dropdown,
+.drop-popover,
+.react-flow__minimap {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow);
+}
+
+.left-toolbar {
+  left: 14px;
+  padding: 6px;
+  gap: 3px;
+  border-radius: 16px;
+}
+
+.left-toolbar__btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--fg-3);
+}
+
+.left-toolbar__btn:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.left-toolbar__btn--active {
+  color: var(--fg-0);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border-alpha-1);
+}
+
+.left-toolbar__menu {
+  border-radius: 14px;
+  padding: 6px;
+}
+
+.left-toolbar__menu button {
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.footer-controls {
+  bottom: 14px;
+  padding: 5px;
+  border-radius: 14px;
+}
+
+.footer-controls--left {
+  left: 14px;
+}
+
+.footer-controls--right {
+  right: 14px;
+}
+
+.footer-tab,
+.footer-btn {
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.footer-tab {
+  padding: 6px 13px;
+}
+
+.footer-tab--active,
+.footer-btn--active {
+  color: var(--fg-0);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border-alpha-1);
+}
+
+.footer-btn--zoom {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.footer-zoom-menu {
+  border-radius: 12px;
+}
+
+.react-flow__minimap {
+  right: 14px !important;
+  bottom: 64px !important;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.react-flow__minimap svg {
+  display: block;
+}
+
+
+/* Status chip (agent · extension · token · req) */
+.statusbar {
+  top: 62px;
+  left: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────── */
+
+.toolbar {
+  position: relative;
+  z-index: 20;
+}
+
+.toolbar-wordmark {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.toolbar-crumb {
+  font-size: 12.5px;
+}
+
+.toolbar-name-btn {
+  font-size: 13px;
+  font-weight: 550;
+  padding: 5px 9px;
+  border-radius: 9px;
+}
+
+.toolbar-name-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.toolbar-name-input {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  border-radius: 9px;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+
+.toolbar-icon-btn {
+  border-radius: 10px;
+}
+
+/* ── Nodes ────────────────────────────────────────────────────────────── */
+
+.node-shell {
+  gap: 8px;
+}
+
+.node-eyebrow {
+  padding: 0 6px;
+  font-size: 11.5px;
+  color: var(--fg-4);
+}
+
+.node-eyebrow .node-title {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--fg-1);
+  opacity: 1;
+  letter-spacing: -0.005em;
+}
+
+.node-eyebrow .node-icon {
+  color: var(--fg-3);
+}
+
+.node-short-id,
+.node-eyebrow [class*="short-id"] {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0;
+}
+
+.node-card {
+  background: linear-gradient(180deg, #1e1d22 0%, var(--surface-1) 100%);
+  border: 1px solid var(--border-alpha-0);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 20px 44px -22px rgba(0, 0, 0, 0.85);
+  transition: border-color 140ms ease, box-shadow 160ms ease;
+}
+
+.node-card:hover {
+  border-color: var(--border-alpha-1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 24px 50px -22px rgba(0, 0, 0, 0.95);
+}
+
+.node-card--selected,
+.node-card--selected:hover {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.9),
+    0 0 0 6px rgba(var(--accent-rgb), 0.12),
+    0 24px 50px -22px rgba(0, 0, 0, 0.95);
+}
+
+.node-card--generator {
+  border-radius: var(--radius-xl);
+}
+
+/* Media inside nodes: rounded frame + hairline, like a print on a lightbox */
+.node-card img,
+.node-card video {
+  border-radius: 12px;
+}
+
+.node-card .thumbnail-tile,
+.node-card .visual-asset__media,
+.node-card .media-placeholder {
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.node-genprompt {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-1);
+  opacity: 1;
+}
+
+.node-genprompt--empty {
+  color: var(--fg-4);
+}
+
+.prompt-tag-pill {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-soft);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-weight: 550;
+}
+
+/* Status strip on the card's left edge */
+.status-strip {
+  width: 2px;
+  top: 18px;
+  bottom: 18px;
+}
+
+/* Footer chips: x1 · model · ratio */
+.node-genfooter {
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.node-chip,
+.node-genfooter__icon-btn {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  color: var(--fg-2);
+  font-weight: 550;
+  font-size: 11px;
+}
+
+.node-chip {
+  padding: 5px 10px;
+}
+
+.node-chip--button:hover,
+.node-chip--select:hover,
+.node-genfooter__icon-btn:hover {
+  color: var(--fg-0);
+  background-color: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.node-chip__step-value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.node-chip--select option {
+  background: var(--surface-2);
+}
+
+/* The one loud element: the lacquer run button */
+.node-genfooter__run {
+  width: 34px;
+  height: 34px;
+  color: #fff;
+  background: var(--accent-gloss);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 4px rgba(120, 10, 50, 0.35),
+    0 6px 16px -6px rgba(var(--accent-rgb), 0.75);
+  transition: transform 120ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.node-genfooter__run:hover {
+  background: var(--accent-gloss);
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 4px rgba(120, 10, 50, 0.35),
+    0 10px 22px -6px rgba(var(--accent-rgb), 0.85);
+}
+
+.node-genfooter__run:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.node-genfooter__run[disabled] {
+  background: var(--surface-3);
+  color: var(--fg-4);
+  border-color: var(--border-alpha-0);
+  box-shadow: none;
+  transform: none;
+  opacity: 1;
+}
+
+/* AI prompt switch */
+.ai-prompt-toggle__switch {
+  background: var(--surface-4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.ai-prompt-toggle--on .ai-prompt-toggle__switch {
+  background: var(--accent-0);
+}
+
+.ai-prompt-toggle__label {
+  color: var(--fg-3);
+}
+
+/* Ports: round sockets with a ring instead of grey squares */
+.node-handle::after {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--surface-0);
+  border: 2px solid rgba(214, 210, 222, 0.5);
+  box-shadow: 0 0 0 3px var(--surface-0);
+}
+
+.node-handle:hover::after,
+.node-handle.connectionindicator:hover::after,
+.react-flow__handle.connecting.node-handle::after {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: var(--accent-0);
+  border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.3);
+}
+
+/* Ordered image inputs (Image 1 / 2 / 3) */
+.image-input-slot__label {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--fg-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-alpha-1);
+  padding: 3px 9px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.6);
+}
+
+.image-input-slot__num {
+  font-family: var(--font-mono);
+  color: var(--accent-soft);
+}
+
+.image-input-add {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--accent-soft);
+}
+
+.image-input-add--assistant {
+  color: var(--fg-4);
+}
+
+.image-input-add--assistant:hover {
+  color: var(--accent-soft);
+}
+
+/* In-image buttons (Replace / Refine / Save) — small glass pills */
+.visual-asset__action,
+.visual-asset__refine-btn {
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.edge-cut-btn {
+  border-color: var(--accent-0);
+  background: var(--surface-2);
+}
+
+.edge-cut-btn:hover {
+  background: var(--accent-0);
+}
+
+/* Running nodes */
+.node-genfooter__run--running {
+  background: var(--accent-gloss);
+}
+
+/* ── Rail footer: account + version ───────────────────────────────────── */
+
+.app-sidebar__bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+}
+
+.app-sidebar__bottom .account-panel,
+.app-sidebar__bottom .account-panel__version-row {
+  background: transparent;
+  border-top: none;
+}
+
+.app-sidebar__bottom .account-panel__version-row {
+  padding: 6px 8px 4px;
+  border-top: 1px solid var(--border-alpha-0);
+}
+
+.account-panel__version-label {
+  color: var(--fg-4);
+  font-size: 11px;
+}
+
+.account-panel__version-label code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+}
+
+.account-panel__update-pill {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-soft);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  box-shadow: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  animation: none;
+}
+
+.account-panel__update-pill:hover {
+  background: rgba(var(--accent-rgb), 0.24);
+}
+
+.account-panel__scan-btn {
+  border-radius: 9px;
+}
+
+/* ── Top-right chips ──────────────────────────────────────────────────── */
+
+.ai-provider-badge {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-alpha-1);
+  color: var(--fg-1);
+}
+
+.ai-provider-badge:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-alpha-2);
+}
+
+.activity-bell {
+  border-radius: 10px;
+}
+
+.activity-bell:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Library tab on the right edge: quiet glass tab, rose star */
+.references-panel__toggle-tab {
+  width: 26px;
+  height: 64px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  color: var(--accent-soft);
+  font-size: 14px;
+  box-shadow: var(--glass-shadow);
+  animation: none;
+}
+
+.references-panel__toggle-tab:hover {
+  color: #fff;
+  border-color: var(--border-alpha-2);
+}
+
+/* ── Panels, dialogs, menus ───────────────────────────────────────────── */
+
+.activity-detail-backdrop,
+.ai-provider-dialog-backdrop,
+.gen-dialog-backdrop,
+.project-modal-backdrop,
+.result-viewer-backdrop,
+.settings-panel-backdrop,
+.setup-modal-backdrop,
+.sponsor-backdrop {
+  background: rgba(8, 7, 10, 0.6) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.gen-dialog,
+.activity-detail,
+.result-viewer,
+.settings-panel,
+.setup-modal,
+.ai-provider-dialog,
+.project-modal,
+.sponsor-dialog {
+  background: var(--surface-modal) !important;
+  border: 1px solid var(--border-alpha-1) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.activity-dropdown {
+  border-radius: 16px;
+}
+
+/* Menus and popovers sit over busy imagery — keep them near-opaque */
+.activity-dropdown,
+.left-toolbar__menu,
+.footer-zoom-menu,
+.drop-popover,
+.selection-toolbar {
+  background: var(--glass-bg-strong) !important;
+}
+
+.references-panel {
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-alpha-0);
+}
+
+/* Primary actions across dialogs share the lacquer finish */
+.gen-dialog__cta,
+.imagegen-form__generate,
+.page__cta,
+.project-modal__btn--primary,
+.result-viewer__btn--primary,
+.visual-asset__refine-submit,
+.character-drop__generate {
+  background: var(--accent-gloss) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 6px 18px -8px rgba(var(--accent-rgb), 0.8);
+  font-weight: 600;
+}
+
+.gen-dialog__cta:disabled,
+.imagegen-form__generate:disabled,
+.project-modal__btn--primary:disabled,
+.visual-asset__refine-submit:disabled,
+.character-drop__generate:disabled {
+  background: var(--surface-3) !important;
+  color: var(--fg-4) !important;
+  border-color: var(--border-alpha-0) !important;
+  box-shadow: none;
+  opacity: 1;
+}
+
+/* Text fields */
+.gen-dialog textarea,
+.gen-dialog input[type="text"],
+.imagegen-form textarea,
+.settings-panel input,
+.project-modal input {
+  border-radius: 12px;
+}
+
+.gen-dialog textarea:focus,
+.imagegen-form textarea:focus,
+.project-modal input:focus,
+.settings-panel input:focus {
+  border-color: rgba(var(--accent-rgb), 0.6) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
+  outline: none;
+}
+
+/* Toasts */
+.toaster__body {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--glass-shadow);
+}
+
+/* ── Pages (Flows / Image Gen / Library) ──────────────────────────────── */
+
+.page {
+  background: var(--surface-0);
+}
+
+.flow-card,
+.library-tile {
+  border-radius: 16px;
+  border: 1px solid var(--border-alpha-0);
+  transition: border-color 140ms ease, transform 160ms ease;
+}
+
+.flow-card:hover,
+.library-tile:hover {
+  border-color: var(--border-alpha-2);
+}
+
+/* ── Motion preferences ───────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+  }
+}

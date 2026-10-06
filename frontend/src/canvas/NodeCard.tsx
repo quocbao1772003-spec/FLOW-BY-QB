@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { requestDownload } from "../store/download";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useBoardStore, type FlowboardNodeData, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
@@ -1916,15 +1917,14 @@ export function NodeCard(props: NodeProps<FlowNode>) {
     // `<a download>` only honours the suggested filename when the resource
     // is same-origin — `/media/<id>` *is* same-origin (proxied by FastAPI),
     // so the title-based filename sticks.
-    ids.forEach((mid, i) => {
-      const a = document.createElement("a");
-      a.href = mediaUrl(mid);
-      const suffix = ids.length > 1 ? `-${i + 1}` : "";
-      a.download = `${safeTitle}-${data.shortId}${suffix}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    });
+    requestDownload(
+      ids.map((mid, i) => ({
+        kind: data.type === "video" ? ("video" as const) : ("image" as const),
+        url: mediaUrl(mid),
+        name: `${safeTitle}-${data.shortId}${ids.length > 1 ? `-${i + 1}` : ""}.${ext}`,
+        label: `#${data.shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
+      })),
+    );
   }
 
   // Magnific-style chip footer — shown on generator nodes (image /

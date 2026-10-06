@@ -112,6 +112,37 @@ interface ClipboardPayload {
 }
 let internalClipboard: ClipboardPayload | null = null;
 
+// Text written to the OS clipboard whenever nodes are copied. Copying nodes
+// used to touch only `internalClipboard`, so an image copied earlier from
+// outside stayed in the OS clipboard — and since an OS image wins on paste,
+// Ctrl+V kept dropping that old image instead of the nodes just copied.
+// Overwriting the OS clipboard makes "most recent copy wins" hold for both
+// directions, and the marker lets paste recognise its own nodes.
+let internalClipboardMarker: string | null = null;
+
+function writeOsClipboardText(text: string): void {
+  let written = false;
+  const onCopy = (ev: ClipboardEvent) => {
+    if (!ev.clipboardData) return;
+    ev.clipboardData.setData("text/plain", text);
+    ev.preventDefault();
+    written = true;
+  };
+  document.addEventListener("copy", onCopy);
+  try {
+    document.execCommand("copy");
+  } catch {
+    /* unsupported — fall through to the async API */
+  } finally {
+    document.removeEventListener("copy", onCopy);
+  }
+  if (!written && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {
+      /* permission denied — internal clipboard still works */
+    });
+  }
+}
+
 type InteractionMode = "hand" | "select";
 
 function DropAddPopover({
@@ -1157,6 +1188,18 @@ export function Board() {
       ) {
         return; // let the field handle paste (text)
       }
+      // Our own node copy is the most recent thing on the clipboard.
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (
+        internalClipboardMarker &&
+        text === internalClipboardMarker &&
+        internalClipboard &&
+        internalClipboard.nodes.length > 0
+      ) {
+        e.preventDefault();
+        void pasteInternalNodes();
+        return;
+      }
       const items = e.clipboardData?.items;
       const files: File[] = [];
       if (items) {
@@ -1351,6 +1394,11 @@ export function Board() {
             };
           }),
         };
+        // Replace whatever the OS clipboard held (e.g. an image copied from
+        // a website) so the next Ctrl+V pastes these nodes, not that image.
+        internalClipboardMarker =
+          `Flowboard: ${internalClipboard.nodes.length} node(s) copied [${Date.now().toString(36)}]`;
+        writeOsClipboardText(internalClipboardMarker);
         showToast(
           `Copied ${internalClipboard.nodes.length} node${internalClipboard.nodes.length !== 1 ? "s" : ""}` +
             (internalClipboard.edges.length > 0

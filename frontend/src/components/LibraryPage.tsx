@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listAssets, mediaUrl, type AssetItem } from "../api/client";
 import { IconDownload, IconRefresh } from "../canvas/icons";
+import { requestDownload } from "../store/download";
 
 // Library — every media the agent has generated/cached (across all
 // flows + the standalone Image Gen page). Backed by GET /api/assets.
@@ -29,12 +30,13 @@ export function LibraryPage() {
 
   function download(item: AssetItem) {
     const ext = item.kind === "video" ? "mp4" : "png";
-    const a = document.createElement("a");
-    a.href = mediaUrl(item.media_id);
-    a.download = `library-${item.media_id.slice(0, 8)}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    requestDownload([
+      {
+        kind: item.kind === "video" ? "video" : "image",
+        url: mediaUrl(item.media_id),
+        name: `library-${item.media_id.slice(0, 8)}.${ext}`,
+      },
+    ]);
   }
 
   return (

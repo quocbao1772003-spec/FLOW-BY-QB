@@ -1,4 +1,6 @@
 import { useCallback, useState } from "react";
+import { requestDownload } from "../store/download";
+import { refFromNode, useAiChatStore } from "../store/aiChat";
 import { useBoardStore } from "../store/board";
 import { mediaUrl, upscaleImage, upscaleImageLocal } from "../api/client";
 import { useGenerationStore } from "../store/generation";
@@ -88,15 +90,14 @@ export function ImageNodeToolbar({
     if (ids.length === 0) return;
     const { safe, shortId } = nameParts();
     const ext = data.type === "video" ? "mp4" : "png";
-    ids.forEach((mid, i) => {
-      const a = document.createElement("a");
-      a.href = mediaUrl(mid);
-      const suffix = ids.length > 1 ? `-${i + 1}` : "";
-      a.download = `${safe}-${shortId}${suffix}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    });
+    requestDownload(
+      ids.map((mid, i) => ({
+        kind: data.type === "video" ? ("video" as const) : ("image" as const),
+        url: mediaUrl(mid),
+        name: `${safe}-${shortId}${ids.length > 1 ? `-${i + 1}` : ""}.${ext}`,
+        label: `#${shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
+      })),
+    );
   }, [rfId, node]);
 
   // 2K = upscale the active variant via Flow, then download the bytes.
@@ -112,14 +113,7 @@ export function ImageNodeToolbar({
     try {
       const blob = await upscaleImage(activeMediaId, projectId, "2K");
       const { safe, shortId } = nameParts();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safe}-${shortId}-2K.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      requestDownload([{ kind: "image", blob, name: `${safe}-${shortId}-2K.png`, label: `#${shortId} · 2K` }]);
     } catch (err) {
       useGenerationStore.setState({
         error:
@@ -139,14 +133,7 @@ export function ImageNodeToolbar({
     try {
       const blob = await upscaleImageLocal(activeMediaId, "2K");
       const { safe, shortId } = nameParts();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safe}-${shortId}-2K-ai.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      requestDownload([{ kind: "image", blob, name: `${safe}-${shortId}-2K-ai.png`, label: `#${shortId} · 2K làm nét` }]);
     } catch (err) {
       useGenerationStore.setState({
         error:
@@ -201,6 +188,23 @@ export function ImageNodeToolbar({
       >
         <SvgEdit />
       </ToolbarButton>
+      <button
+        type="button"
+        className="image-node-toolbar__use"
+        title="Use — đưa ảnh này vào ô chat của Trợ lý AI (chưa gửi)"
+        disabled={!hasMedia || !node}
+        onClick={() => {
+          if (!node) return;
+          useAiChatStore
+            .getState()
+            .attachToChat([refFromNode(node as unknown as { id: string; data: Record<string, unknown> })]);
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9L12 2.5z" fill="currentColor" />
+        </svg>
+        Use
+      </button>
       <ToolbarButton
         title="Delete (Backspace)"
         onClick={handleDelete}

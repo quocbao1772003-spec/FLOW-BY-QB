@@ -13,6 +13,8 @@ import { Toaster } from "./components/Toaster";
 import { GenerationDialog } from "./components/GenerationDialog";
 import { ResultViewer } from "./components/ResultViewer";
 import { ForcedSetupGate } from "./components/ForcedSetupGate";
+import { DownloadDialog } from "./components/DownloadDialog";
+import { AiChatPanel } from "./components/ai-chat/AiChatPanel";
 import { useBoardStore } from "./store/board";
 import { useReferencesStore } from "./store/references";
 import { useViewStore } from "./store/view";
@@ -55,10 +57,12 @@ export function App() {
         {view === "library" && <LibraryPage />}
       </ReactFlowProvider>
       {/* <ChatSidebar /> */}
+      <AiChatPanel />
       <Toaster />
       <GenerationDialog />
       <ResultViewer />
       <ForcedSetupGate />
+      <DownloadDialog />
     </div>
   );
 }

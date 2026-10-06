@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { requestDownload } from "../store/download";
 import { useGenerationStore } from "../store/generation";
 import { useBoardStore } from "../store/board";
 import { useSettingsStore } from "../store/settings";
@@ -433,12 +434,14 @@ export function ResultViewer() {
       "_",
     );
     const ext = data.type === "video" ? "mp4" : "png";
-    const a = document.createElement("a");
-    a.href = mediaUrl(mid);
-    a.download = `${safeTitle}-${data.shortId}${suffix}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    requestDownload([
+      {
+        kind: data.type === "video" ? "video" : "image",
+        url: mediaUrl(mid),
+        name: `${safeTitle}-${data.shortId}${suffix}.${ext}`,
+        label: `#${data.shortId}`,
+      },
+    ]);
   }
 
   // Download at the chosen resolution. "1K" = the current media as-is.
@@ -463,14 +466,9 @@ export function ResultViewer() {
         /[^A-Za-z0-9_-]+/g,
         "_",
       );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safeTitle}-${data.shortId}-2K.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      requestDownload([
+        { kind: "image", blob, name: `${safeTitle}-${data.shortId}-2K.png`, label: `#${data.shortId} · 2K` },
+      ]);
     } catch (err) {
       useGenerationStore.setState({
         error:

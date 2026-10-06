@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { requestDownload, type DownloadItem } from "../store/download";
 import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
@@ -655,7 +656,7 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
   // media (no zip). Same-origin /media/<id> URLs honour the `download`
   // filename. Small stagger so Chrome doesn't drop downloads.
   function downloadGroupMedia() {
-    const items: Array<{ url: string; name: string }> = [];
+    const items: DownloadItem[] = [];
     for (const m of members()) {
       const t = m.data.type;
       if (t === "prompt" || t === "note" || t === "assistant") continue;
@@ -673,21 +674,14 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
       ids.forEach((mid, i) => {
         const suffix = ids.length > 1 ? `-${i + 1}` : "";
         items.push({
+          kind: t === "video" ? "video" : "image",
           url: mediaUrl(mid),
           name: `${safeTitle}-${m.data.shortId}${suffix}.${ext}`,
+          label: `#${m.data.shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
         });
       });
     }
-    items.forEach((item, i) => {
-      setTimeout(() => {
-        const a = document.createElement("a");
-        a.href = item.url;
-        a.download = item.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }, i * 300);
-    });
+    requestDownload(items);
   }
 
   // Download every IMAGE in the group upscaled to 2K — locally (Pillow
@@ -725,23 +719,17 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
         return;
       }
       let failed = 0;
+      const ready: DownloadItem[] = [];
       for (const item of items) {
         try {
           const blob = await upscaleImageLocal(item.mediaId, "2K");
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = item.name;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
+          ready.push({ kind: "image", blob, name: item.name, label: "2K" });
         } catch {
           failed++;
         }
-        // Small gap so Chrome doesn't drop back-to-back downloads.
-        await new Promise((r) => setTimeout(r, 250));
       }
+      // Rename / convert all upscaled images in one go.
+      if (ready.length > 0) requestDownload(ready);
       if (failed > 0) {
         useGenerationStore.setState({
           error: `Tải 2K: ${failed}/${items.length} ảnh thất bại.`,
