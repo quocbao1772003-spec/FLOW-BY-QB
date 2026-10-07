@@ -652,3 +652,434 @@
   font-size: 11.5px;
   color: var(--fg-3, #a1a1aa);
 }
+
+/* ── Group naming ──────────────────────────────────────────────────── */
+.dl-radio__hint {
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--fg-4, #7a7880);
+}
+
+.dl-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 10px;
+}
+
+.dl-group {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 3px solid var(--grp, #f2558f);
+  padding: 10px 10px 2px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dl-group .dl-formula {
+  margin: 8px 0;
+}
+
+.dl-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--fg-0, #fff);
+}
+
+.dl-group__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grp, #f2558f);
+  box-shadow: 0 0 6px var(--grp, #f2558f);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.dl-group__count {
+  font-size: 11.5px;
+  color: var(--fg-4, #7a7880);
+}
+
+.dl-group__thumbs {
+  display: inline-flex;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dl-group__thumbs img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.dl-add-group {
+  align-self: flex-start;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px dashed rgba(var(--accent-rgb, 242, 85, 143), 0.45);
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.06);
+  color: var(--accent-soft, #ff9cc3);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dl-add-group:hover {
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.12);
+}
+
+.dl-file__group {
+  margin: 4px 0 2px;
+}
+
+.dl-file__group .chip-select {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--fg-2, #d4d4d8);
+}
+
+/* ── ZIP bar ───────────────────────────────────────────────────────── */
+.dl-zipbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.dl-zipname {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0 10px;
+}
+
+.dl-zipname:focus-within {
+  border-color: rgba(var(--accent-rgb, 242, 85, 143), 0.5);
+}
+
+.dl-zipname input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg-0, #fff);
+  font: 500 12.5px var(--font-mono, ui-monospace, monospace);
+  padding: 8px 0;
+}
+
+.dl-zipname em {
+  font-style: normal;
+  font: 12px var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-4, #7a7880);
+}
+
+/* ── Wide two-column layout ────────────────────────────────────────────
+   Left: every image as one self-contained card (number, thumb, info,
+   group, output name, corner-mark result). Right: the settings, in the
+   order they apply: ① mark ② name ③ format. Each column scrolls alone. */
+.dl-dialog {
+  /* Wider only — height stays as before (fits content, capped). */
+  width: min(1240px, calc(100vw - 48px));
+}
+
+.dl-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+}
+
+.dl-col {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 24px 16px;
+}
+
+.dl-col--files {
+  border-right: 1px solid var(--border-alpha-0, rgba(255, 255, 255, 0.055));
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.dl-col__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0 10px;
+  margin-bottom: 2px;
+  background: linear-gradient(var(--surface-modal, #19181c) 80%, transparent);
+}
+
+.dl-col__head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-0, #f3f1f5);
+}
+
+.dl-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.dl-stat {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--fg-2, #c2bfc9);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.dl-stat--ok {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+.dl-stat--muted {
+  color: var(--fg-4, #7a7880);
+}
+
+.dl-col--files .dl-files {
+  max-height: none;
+  overflow: visible;
+  gap: 10px;
+}
+
+.dl-col--files .dl-file {
+  position: relative;
+  align-items: stretch;
+  padding: 10px 12px 10px 10px;
+  border-left: 3px solid var(--grp, transparent);
+}
+
+.dl-file__no {
+  align-self: flex-start;
+  min-width: 18px;
+  font: 600 10.5px var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-4, #7a7880);
+  padding-top: 2px;
+  text-align: right;
+}
+
+.dl-col--files .dl-thumb {
+  width: 72px;
+  height: 72px;
+  align-self: center;
+}
+
+.dl-col--files .dl-file__meta {
+  justify-content: center;
+  gap: 4px;
+}
+
+.dl-file__mark {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-left: 12px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.08);
+  min-width: 112px;
+}
+
+.dl-file__markpair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-4, #7a7880);
+  font-size: 11px;
+}
+
+.dl-file__markpair img {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.dl-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--fg-3, #9592a0);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dl-badge--ok {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.dl-badge--muted {
+  color: var(--fg-4, #7a7880);
+}
+
+.dl-col--opts .dl-section:first-child {
+  padding-top: 14px;
+}
+
+.dl-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  border-radius: 50%;
+  font: 700 10.5px var(--font-ui, system-ui);
+  color: #fff;
+  background: var(--accent-gloss, #f2558f);
+  vertical-align: 1px;
+}
+
+.dl-col--opts .dl-presets {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dl-zipbar {
+  padding: 10px 24px;
+}
+
+@media (max-width: 920px) {
+  .dl-body {
+    display: block;
+    overflow-y: auto;
+  }
+  .dl-col {
+    overflow: visible;
+  }
+  .dl-col--files {
+    border-right: none;
+    border-bottom: 1px solid var(--border-alpha-0, rgba(255, 255, 255, 0.055));
+  }
+  .dl-file__mark {
+    min-width: 0;
+  }
+}
+
+/* ── Compact right column ──────────────────────────────────────────── */
+.dl-section--inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.dl-section--inline h3 {
+  margin: 0;
+}
+
+.dl-switch__state {
+  font-size: 12px;
+  color: var(--fg-3, #9592a0);
+  min-width: 24px;
+}
+
+/* Labels above the inputs — the settings column is narrower. */
+.dl-col--opts .dl-box {
+  padding: 12px;
+  gap: 8px;
+}
+
+.dl-col--opts .dl-field {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.dl-col--opts .dl-field > span {
+  padding-top: 0;
+  font-size: 11.5px;
+  font-weight: 550;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-4, #7a7880);
+}
+
+.dl-col--opts .dl-sku {
+  flex-wrap: nowrap;
+}
+
+.dl-col--opts .dl-sku__part {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dl-col--opts .dl-sku__part--wide {
+  flex: 1.3 1 0;
+}
+
+.dl-col--opts .dl-sku__result {
+  flex-shrink: 0;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dl-col--opts .dl-fixed {
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
+/* Smaller per-image mark result */
+.dl-file__mark {
+  min-width: 92px;
+  gap: 4px;
+}
+
+.dl-file__markpair img {
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+}
+
+.dl-col--opts .dl-fixed {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.dl-body--single {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+}
+
+@media (max-width: 920px) {
+  .dl-body--single {
+    display: block;
+  }
+}

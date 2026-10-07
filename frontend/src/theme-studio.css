@@ -916,3 +916,80 @@ a.account-panel__version-link:hover code {
   border-radius: 9px;
   box-shadow: 0 3px 10px -4px rgba(var(--accent-rgb), 0.6);
 }
+
+/* ── Library: multi-select + ZIP ───────────────────────────────────── */
+.library-zip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent-gloss);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 16px -8px rgba(var(--accent-rgb), 0.8);
+  cursor: pointer;
+}
+
+.library-zip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.library-zip-btn--ghost {
+  color: var(--fg-1);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.library-zip-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.library-grid--selecting .library-tile {
+  cursor: pointer;
+  user-select: none;
+}
+
+.library-grid--selecting .library-tile img {
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.library-tile--selected {
+  border-color: var(--accent-0) !important;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.55), 0 10px 26px -14px rgba(var(--accent-rgb), 0.9);
+}
+
+.library-tile--selected img {
+  transform: scale(0.94);
+  border-radius: 10px;
+}
+
+.library-tile--disabled {
+  opacity: 0.35;
+  cursor: not-allowed !important;
+}
+
+.library-tile__check {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(16, 16, 16, 0.45);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.library-tile--selected .library-tile__check {
+  background: var(--accent-gloss);
+  border-color: rgba(255, 255, 255, 0.9);
+}

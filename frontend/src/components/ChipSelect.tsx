@@ -119,17 +119,23 @@ export function ChipSelect<V extends string | number>({
       if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
       setOpen(false);
     };
+    // A scrolling list (e.g. the download dialog) just carries the chip
+    // along — follow it instead of closing.
+    const onScroll = (e: Event) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      place();
+    };
     document.addEventListener("pointerdown", onDown, true);
     window.addEventListener("wheel", onMove, { capture: true, passive: true });
     window.addEventListener("resize", close);
-    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("wheel", onMove, { capture: true } as EventListenerOptions);
       window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
-  }, [open, close]);
+  }, [open, close, place]);
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLButtonElement>) {
     e.stopPropagation();

@@ -20,29 +20,38 @@ export interface DownloadItem {
   nodeId?: string;
 }
 
+export interface DownloadOptions {
+  /** Pack everything into one .zip (Library multi-select). */
+  zip?: boolean;
+  /** Suggested archive name, without ".zip". */
+  zipName?: string;
+}
+
 interface DownloadState {
   items: DownloadItem[];
   open: boolean;
-  request(items: DownloadItem[]): void;
+  options: DownloadOptions;
+  request(items: DownloadItem[], options?: DownloadOptions): void;
   close(): void;
 }
 
 export const useDownloadStore = create<DownloadState>((set) => ({
   items: [],
   open: false,
-  request(items) {
+  options: {},
+  request(items, options = {}) {
     const videos = items.filter((i) => i.kind === "video" && i.url);
     const images = items.filter((i) => i.kind === "image" && (i.url || i.blob));
     // Videos can't be converted in the browser — save them as before.
     videos.forEach((v, i) => setTimeout(() => saveUrl(v.url!, v.name), i * 300));
-    if (images.length > 0) set({ items: images, open: true });
+    if (images.length > 0) set({ items: images, open: true, options });
   },
   close() {
-    set({ open: false, items: [] });
+    set({ open: false, items: [], options: {} });
   },
 }));
 
 /** Shorthand used by every download button in the app. */
-export function requestDownload(items: DownloadItem[]): void {
-  useDownloadStore.getState().request(items);
+export function requestDownload(items: DownloadItem[], options?: DownloadOptions): void {
+  useDownloadStore.getState().request(items, options);
 }
