@@ -19,7 +19,8 @@ import {
   type ImageInfo,
   type NamingFormula,
 } from "../lib/imageExport";
-import { patchCornerMark, type PatchResult } from "../lib/cornerPatch";
+import { patchCornerMark } from "../lib/cornerPatch";
+import { removeCornerMark } from "../lib/markRemove";
 import { altTextFromFileName, tagImageMetadata } from "../lib/aiMetadata";
 import { useBoardStore } from "../store/board";
 import { mediaUrl } from "../api/client";
@@ -172,7 +173,16 @@ function baseRefsFor(nodeId: string | undefined): BaseRef[] {
   return out;
 }
 
-type PatchState = { status: "pending" } | { status: "none" } | { status: "nomatch" } | { status: "ok"; result: PatchResult; base: string };
+interface Cleaned {
+  blob: Blob;
+  before: string;
+  after: string;
+}
+
+type PatchState =
+  | { status: "pending" }
+  | { status: "nomark" }
+  | { status: "ok"; result: Cleaned; how: "alpha" | "base"; base?: string };
 
 const MIME_FORMAT: Record<string, ExportFormat> = { "image/jpeg": "jpeg", "image/png": "png", "image/webp": "webp" };
 
@@ -254,21 +264,29 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
     setPatches(items.map(() => ({ status: "pending" })));
     (async () => {
       for (let i = 0; i < items.length; i++) {
-        const refs = baseRefsFor(items[i].nodeId);
-        let st: PatchState;
+        let st: PatchState = { status: "nomark" };
         const src = blobs[i];
-        if (!src || refs.length === 0) {
-          st = { status: "none" };
-        } else {
+        if (src) {
           try {
-            const bases = (
-              await Promise.all(refs.map((r) => fetchBlob(r.url).catch(() => null)))
-            ).filter((b): b is Blob => b !== null);
-            const res = await patchCornerMark(src, bases);
-            st = res ? { status: "ok", result: res, base: refs[res.baseIndex]?.shortId ?? "" } : { status: "nomatch" };
+            // 1) Undo the white overlay — recovers the image's own pixels.
+            const un = await removeCornerMark(src);
+            if (un) {
+              st = { status: "ok", result: un, how: "alpha" };
+            } else {
+              // 2) Fallback: copy the spot from a base photo wired in.
+              const refs = baseRefsFor(items[i].nodeId);
+              if (refs.length > 0) {
+                const bases = (
+                  await Promise.all(refs.map((r) => fetchBlob(r.url).catch(() => null)))
+                ).filter((b): b is Blob => b !== null);
+                const res = await patchCornerMark(src, bases);
+                if (res && res.box.detected) {
+                  st = { status: "ok", result: res, how: "base", base: refs[res.baseIndex]?.shortId ?? "" };
+                }
+              }
+            }
           } catch (e) {
-            console.error("[download] corner patch failed:", e);
-            st = { status: "nomatch" };
+            console.error("[download] corner mark removal failed:", e);
           }
         }
         if (!alive) return;
@@ -379,7 +397,6 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
 
   const n = items.length;
   const patchPending = saved.patchMark && patches.some((p) => p?.status === "pending");
-  const anyBase = items.some((it) => baseRefsFor(it.nodeId).length > 0);
 
   return (
     <div className="dl-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
@@ -437,7 +454,7 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
           </section>
 
           {/* ── Corner mark ────────────────────────────────────────── */}
-          {anyBase && (
+          {(
             <section className="dl-section">
               <div className="dl-radio-row">
                 <label className="dl-switch">
@@ -449,12 +466,12 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
                   <span className="dl-switch__track" aria-hidden="true">
                     <span className="dl-switch__knob" />
                   </span>
-                  <span>Che dấu ✦ ở góc bằng ảnh gốc</span>
+                  <span>Xoá dấu ✦ ở góc ảnh</span>
                 </label>
               </div>
               <p className="dl-note dl-note--flush">
-                Lấy đúng góc đó từ ảnh gốc đang nối vào node, tự dò và khớp toạ độ rồi hoà màu. File tải về được ghi
-                chú “AI-generated” trong metadata.
+                Tính ngược lớp dấu mờ để lấy lại đúng phần ảnh bên dưới — không cần ảnh gốc; nếu không được thì lấy
+                góc đó từ ảnh gốc đang nối vào node. Ảnh đã xoá dấu được ghi chú “AI-generated” trong metadata.
               </p>
               {saved.patchMark && (
                 <ul className="dl-patches">
@@ -468,8 +485,8 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
                             <span className="dl-arrow" aria-hidden="true">→</span>
                             <img src={p.result.after} alt="Sau" />
                             <span className="dl-patch__note">
-                              {it.label ? `${it.label} · ` : ""}khớp với ảnh gốc #{p.base}
-                              {p.result.box.detected ? "" : " · vị trí mặc định"}
+                              {it.label ? `${it.label} · ` : ""}
+                              {p.how === "alpha" ? "đã tính ngược lớp dấu" : `lấy góc từ ảnh gốc #${p.base}`}
                             </span>
                           </>
                         ) : (
@@ -477,9 +494,7 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
                             {it.label ? `${it.label} · ` : ""}
                             {!p || p.status === "pending"
                               ? "Đang dò vị trí dấu…"
-                              : p.status === "none"
-                                ? "Không có ảnh gốc nối vào node — giữ nguyên"
-                                : "Góc ảnh gốc khác quá nhiều so với ảnh mới — giữ nguyên"}
+                              : "Không thấy dấu ✦ ở góc — giữ nguyên ảnh"}
                           </span>
                         )}
                       </li>
