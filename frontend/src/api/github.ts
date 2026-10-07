@@ -12,8 +12,10 @@ const REPO = "quocbao1772003-spec/FLOW-BY-QB";
 export const REPO_URL = `https://github.com/${REPO}`;
 const RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const HEAD_URL = `https://api.github.com/repos/${REPO}/commits/main`;
-const HEAD_CACHE_KEY = "flowboard.github.mainHead.v1";
-const CACHE_KEY = "flowboard.github.latestRelease.v1";
+const HEAD_CACHE_KEY = `flowboard.github.mainHead.v1:${REPO}`;
+// Keyed by repo: the old key held crisng95's release, which kept the
+// "↑ v1.3.0" upstream pill alive for an hour after switching to the fork.
+const CACHE_KEY = `flowboard.github.latestRelease.v2:${REPO}`;
 // 1 hour — long enough that idle tabs don't hammer the API, short
 // enough that a freshly-cut release shows up the same session.
 const CACHE_TTL_MS = 60 * 60 * 1000;

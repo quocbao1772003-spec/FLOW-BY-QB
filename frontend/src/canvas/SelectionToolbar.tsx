@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "@xyflow/react";
 import { useBoardStore, type FlowNode } from "../store/board";
 import { useGenerationStore } from "../store/generation";
-import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant, upscaleImageLocal } from "../api/client";
+import { createNode, enhancePrompt, mediaUrl, patchNode, runAssistant } from "../api/client";
 import { resolveImagePrompt } from "./NodeCard";
 import {
   IconCaretDown,
@@ -678,66 +678,11 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
           url: mediaUrl(mid),
           name: `${safeTitle}-${m.data.shortId}${suffix}.${ext}`,
           label: `#${m.data.shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
+          nodeId: m.id,
         });
       });
     }
     requestDownload(items);
-  }
-
-  // Download every IMAGE in the group upscaled to 2K — locally (Pillow
-  // Lanczos + light sharpen). Faithful (no invented detail), instant, no Flow
-  // and no quota. Videos are skipped. Done one at a time with a clean busy
-  // state; reports how many failed.
-  async function downloadGroupMedia2K() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const items: Array<{ mediaId: string; name: string }> = [];
-      for (const m of members()) {
-        const t = m.data.type;
-        if (t === "video" || t === "prompt" || t === "note" || t === "assistant") continue;
-        const rawIds =
-          m.data.mediaIds && m.data.mediaIds.length > 0
-            ? m.data.mediaIds
-            : m.data.mediaId
-              ? [m.data.mediaId]
-              : [];
-        const ids = rawIds.filter(
-          (x): x is string => typeof x === "string" && x.length > 0,
-        );
-        const safeTitle = (m.data.title || t).replace(/[^A-Za-z0-9_-]+/g, "_");
-        ids.forEach((mid, i) => {
-          const suffix = ids.length > 1 ? `-${i + 1}` : "";
-          items.push({
-            mediaId: mid,
-            name: `${safeTitle}-${m.data.shortId}${suffix}-2K.png`,
-          });
-        });
-      }
-      if (items.length === 0) {
-        useGenerationStore.setState({ error: "Group không có ảnh để tải 2K." });
-        return;
-      }
-      let failed = 0;
-      const ready: DownloadItem[] = [];
-      for (const item of items) {
-        try {
-          const blob = await upscaleImageLocal(item.mediaId, "2K");
-          ready.push({ kind: "image", blob, name: item.name, label: "2K" });
-        } catch {
-          failed++;
-        }
-      }
-      // Rename / convert all upscaled images in one go.
-      if (ready.length > 0) requestDownload(ready);
-      if (failed > 0) {
-        useGenerationStore.setState({
-          error: `Tải 2K: ${failed}/${items.length} ảnh thất bại.`,
-        });
-      }
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function deleteGroup() {
@@ -804,17 +749,6 @@ function GroupToolbar({ frame }: { frame: FlowNode }) {
       </span>
       <PillButton label={locked ? <IconLock size={13} /> : <IconUnlock size={13} />} title={locked ? "Unlock" : "Lock"} disabled={busy} onClick={toggleLock} />
       <PillButton label={<IconDownload size={13} />} title="Tải toàn bộ ảnh/video trong group (1K gốc, mỗi file một ảnh)" disabled={busy} onClick={downloadGroupMedia} />
-      <PillButton
-        label={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-            {busy ? <IconSpinner size={13} /> : <IconDownload size={13} />}
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>2K</span>
-          </span>
-        }
-        title="Tải toàn bộ ảnh trong group ở 2K — làm nét AI trên máy (Real-ESRGAN nếu đã cài, tự nhiên · không dính quota Flow)"
-        disabled={busy}
-        onClick={() => void downloadGroupMedia2K()}
-      />
       <PillButton label={<IconCopy size={13} />} title="Duplicate group" disabled={busy} onClick={() => void duplicateGroup()} />
       <span className="selection-toolbar__sep" />
       <PillButton label={<IconTrash size={13} />} title="Delete group + contents" danger disabled={busy} onClick={() => void deleteGroup()} />

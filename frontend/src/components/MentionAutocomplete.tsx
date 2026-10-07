@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import "./MentionAutocomplete.css";
 
 /**
  * Reusable textarea with @-mention autocomplete + inline tag highlighting.
@@ -46,6 +47,8 @@ export interface MentionNode {
    * mention token still uses the canonical `@Type#shortId` syntax — the
    * custom name is display-only so the backend parser stays simple. */
   customTitle?: string;
+  /** Optional preview image shown in the picker row. */
+  thumbUrl?: string;
 }
 
 export interface MentionAutocompleteHandle {
@@ -65,11 +68,10 @@ interface Props {
   style?: CSSProperties;
   onMention?: (nodeId: string, isConnected: boolean) => void;
   onKeyDownPassthrough?: (e: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
-  /** Plain mode: render the textarea text directly (visible), skip the
-   *  transparent-text + highlight-mirror overlay. The overlay drifts when
-   *  the field lives inside a CSS-scaled container (ReactFlow canvas),
-   *  causing cursor jumps + selection misalignment — plain mode avoids
-   *  that. The @-mention dropdown still works. */
+  /** Plain mode: visible textarea text, no highlight mirror. (The mirror
+   *  used to drift inside the scaled canvas — the cause was the textarea's
+   *  scrollbar narrowing its text box; the mirror now compensates, so the
+   *  canvas editor uses the highlighted mode too.) */
   plain?: boolean;
 }
 
@@ -120,6 +122,12 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
     const [tokenStart, setTokenStart] = useState<number | null>(null);
     const [activeIdx, setActiveIdx] = useState(0);
     const [popPos, setPopPos] = useState<{ left: number; top: number } | null>(null);
+    // "Swap" mode: the user clicked an existing tag — the same popover lists
+    // the nodes it can be switched to, and a pick replaces that tag in place.
+    const [swap, setSwap] = useState<{ start: number; end: number; shortId: string } | null>(null);
+    // Extra right padding for the mirror so it wraps exactly like the
+    // textarea once the textarea grows a vertical scrollbar.
+    const [scrollbarPad, setScrollbarPad] = useState(0);
 
     useImperativeHandle(
       ref,
@@ -131,63 +139,53 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
     );
 
     // Connected list first, then disconnected. Used by keyboard nav.
-    const filteredConnected = filterNodes(connectedNodes, query);
-    const filteredDisconnected = filterNodes(disconnectedNodes, query);
+    const listQuery = swap ? "" : query;
+    const filteredConnected = filterNodes(connectedNodes, listQuery);
+    const filteredDisconnected = filterNodes(disconnectedNodes, listQuery);
     const flatList: Array<MentionNode & { connected: boolean }> = [
       ...filteredConnected.map((n) => ({ ...n, connected: true })),
       ...filteredDisconnected.map((n) => ({ ...n, connected: false })),
     ];
     const total = flatList.length;
+    const popOpen = open || swap !== null;
 
     useEffect(() => {
       if (activeIdx >= total) setActiveIdx(Math.max(0, total - 1));
     }, [total, activeIdx]);
 
-    // Smart popover positioning — picks a corner of the textarea that
-    // gives the popup room without falling off the viewport. Strategy:
-    //   1. Default to anchor BELOW the textarea, left-aligned.
-    //   2. If not enough room below, flip ABOVE the textarea.
-    //   3. If the popup would overflow right, shift it left.
-    //   4. If neither above nor below fits, pick the side with more
-    //      room and let the popup's internal scroll handle the rest.
-    const POPUP_W = 360; // matches maxWidth in styles below
-    const POPUP_H = 360; // matches maxHeight
+    // Popover placement. Anchors to the clicked tag in swap mode, otherwise
+    // to the textarea: below when there is room, else above; shifted left
+    // if it would leave the viewport.
+    const POPUP_W = 360;
+    const POPUP_H = 360;
     const GAP = 8;
 
-    const updatePopPos = useCallback(() => {
+    const updatePopPos = useCallback((anchor?: DOMRect | null) => {
       const ta = textareaRef.current;
       if (!ta) return;
-      const rect = ta.getBoundingClientRect();
+      const rect = anchor ?? ta.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
 
       const spaceBelow = vh - rect.bottom;
       const spaceAbove = rect.top;
 
-      // Vertical: prefer below, flip above when needed.
       let top: number;
       if (spaceBelow >= POPUP_H + GAP) {
         top = rect.bottom + 4;
       } else if (spaceAbove >= POPUP_H + GAP) {
         top = rect.top - POPUP_H - 4;
+      } else if (spaceBelow >= spaceAbove) {
+        top = Math.min(rect.bottom + 4, vh - Math.min(POPUP_H, spaceBelow) - GAP);
       } else {
-        // Neither has full room — pick the bigger side; cap to viewport.
-        if (spaceBelow >= spaceAbove) {
-          top = Math.min(rect.bottom + 4, vh - Math.min(POPUP_H, spaceBelow) - GAP);
-        } else {
-          top = Math.max(GAP, rect.top - Math.min(POPUP_H, spaceAbove) - 4);
-        }
+        top = Math.max(GAP, rect.top - Math.min(POPUP_H, spaceAbove) - 4);
       }
-      // Final clamp to viewport.
       top = Math.max(GAP, Math.min(top, vh - 80));
 
-      // Horizontal: prefer left-aligned to textarea, shift left when
-      // popup would overflow the right edge.
       let left = rect.left;
       if (left + POPUP_W > vw - GAP) {
         left = Math.max(GAP, vw - POPUP_W - GAP);
       }
-
       setPopPos({ left, top });
     }, []);
 
@@ -202,6 +200,7 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
           return;
         }
         const start = before.length - (m[2].length + 1);
+        setSwap(null);
         setTokenStart(start);
         setQuery(m[2]);
         setActiveIdx(0);
@@ -211,8 +210,7 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       [updatePopPos],
     );
 
-    // Keep popover anchored if the textarea moves (window resize,
-    // scrolling, parent layout shift). Cheap to recompute.
+    // Keep the popover anchored while the page moves.
     useLayoutEffect(() => {
       if (!open) return;
       updatePopPos();
@@ -225,8 +223,6 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       };
     }, [open, updatePopPos]);
 
-    // Sync mirror scroll with textarea scroll so highlights stay
-    // aligned when the user scrolls within a long prompt.
     const syncMirrorScroll = useCallback(() => {
       const ta = textareaRef.current;
       const mirror = mirrorRef.current;
@@ -235,39 +231,36 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       mirror.scrollLeft = ta.scrollLeft;
     }, []);
 
+    // The textarea's scrollbar (once the text overflows) narrows its text
+    // box; the mirror has none, so without this it wraps later and every
+    // highlight after the first wrapped line drifts. Layout sizes, so this
+    // holds under the canvas' CSS scale too.
+    useLayoutEffect(() => {
+      if (plain) return;
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const measure = () => {
+        const cs = window.getComputedStyle(ta);
+        const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+        const sb = Math.max(0, ta.offsetWidth - ta.clientWidth - borders);
+        setScrollbarPad((p) => (Math.abs(p - sb) > 0.5 ? sb : p));
+        syncMirrorScroll();
+      };
+      measure();
+      const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+      ro?.observe(ta);
+      return () => ro?.disconnect();
+    }, [value, plain, syncMirrorScroll]);
+
     const handleChange = useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const next = e.target.value;
+        setSwap(null);
         onChange(next);
         recomputeTokenState(next, e.target.selectionStart ?? next.length);
-        // Allow React to commit the new value before re-syncing.
         requestAnimationFrame(syncMirrorScroll);
       },
       [onChange, recomputeTokenState, syncMirrorScroll],
-    );
-
-    const handleKeyDown = useCallback(
-      (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-        onKeyDownPassthrough?.(e);
-        if (e.defaultPrevented) return;
-        if (!open || total === 0) return;
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setActiveIdx((i) => (i + 1) % total);
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setActiveIdx((i) => (i - 1 + total) % total);
-        } else if (e.key === "Enter" || e.key === "Tab") {
-          e.preventDefault();
-          const pick = flatList[activeIdx];
-          if (pick) insertMention(pick);
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          setOpen(false);
-        }
-      },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [open, total, activeIdx, flatList, onKeyDownPassthrough],
     );
 
     const insertMention = useCallback(
@@ -275,17 +268,10 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
         const ta = textareaRef.current;
         if (ta === null || tokenStart === null) return;
         const cursor = ta.selectionStart ?? value.length;
-        // Pick the DISPLAY name in priority order:
-        //   1. user-assigned customTitle (the rename)
-        //   2. type label (e.g. "Image", "Assistant")
-        // Then append " #<shortId>" — the canonical handle the backend
-        // uses for lookup. This matches Magnific's mention grammar and
-        // means what the user sees IS what's in the textarea (perfect
-        // caret alignment, no overlay substitution required).
-        const displayName = pick.customTitle?.trim() || pick.type;
-        const tokenText = `@${displayName} #${pick.shortId} `;
-        const next =
-          value.slice(0, tokenStart) + tokenText + value.slice(cursor);
+        // Display name: the user's rename first, else the type. The " #id"
+        // suffix is the handle the backend resolves.
+        const tokenText = `${tokenFor(pick)} `;
+        const next = value.slice(0, tokenStart) + tokenText + value.slice(cursor);
         onChange(next);
         setOpen(false);
         setTokenStart(null);
@@ -301,18 +287,108 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       [tokenStart, value, onChange, onMention],
     );
 
-    // Click outside closes the popover.
-    //
-    // CRITICAL: ReactFlow's node event handlers call `stopPropagation`
-    // on pointer events, so document-level listeners in the BUBBLE phase
-    // never fire. We attach in the CAPTURE phase (third arg `true`)
-    // which sees the event before any descendant can stop it.
-    //
-    // Also listen for both pointerdown AND mousedown — pointerdown is
-    // the modern path, mousedown is the fallback when an ancestor
-    // converts pointer events. Either is enough to dismiss the popup.
+    /** Replace the clicked tag with another node's tag. */
+    const swapMention = useCallback(
+      (pick: MentionNode & { connected: boolean }) => {
+        if (!swap) return;
+        const tokenText = tokenFor(pick);
+        const next = value.slice(0, swap.start) + tokenText + value.slice(swap.end);
+        onChange(next);
+        setSwap(null);
+        const newCursor = swap.start + tokenText.length;
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(newCursor, newCursor);
+          }
+        });
+        if (pick.shortId !== swap.shortId) onMention?.(pick.id, pick.connected);
+      },
+      [swap, value, onChange, onMention],
+    );
+
+    const choose = useCallback(
+      (pick: MentionNode & { connected: boolean }) => {
+        if (swap) swapMention(pick);
+        else insertMention(pick);
+      },
+      [swap, swapMention, insertMention],
+    );
+
+    /** A click that lands inside a completed tag opens the swap list. */
+    const handleClickInText = useCallback(() => {
+      const ta = textareaRef.current;
+      if (!ta || disabled) return;
+      const a = ta.selectionStart ?? 0;
+      const b = ta.selectionEnd ?? 0;
+      if (a !== b) {
+        setSwap(null);
+        return;
+      }
+      MENTION_COMPLETED_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      let hit: { start: number; end: number; shortId: string } | null = null;
+      while ((m = MENTION_COMPLETED_RE.exec(value)) !== null) {
+        const start = m.index;
+        const end = m.index + m[0].length;
+        if (a >= start && a < end) {
+          hit = { start, end, shortId: m[2] };
+          break;
+        }
+      }
+      if (!hit) {
+        setSwap(null);
+        return;
+      }
+      setOpen(false);
+      setTokenStart(null);
+      setSwap(hit);
+      const all = [...connectedNodes, ...disconnectedNodes];
+      const cur = all.findIndex((n) => n.shortId === hit!.shortId);
+      setActiveIdx(cur >= 0 ? cur : 0);
+      const span = mirrorRef.current?.querySelector<HTMLElement>(`[data-ms="${hit.start}"]`);
+      updatePopPos(span ? span.getBoundingClientRect() : null);
+    }, [value, disabled, connectedNodes, disconnectedNodes, updatePopPos]);
+
+    const handleKeyDown = useCallback(
+      (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+        if (popOpen && total > 0) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            e.stopPropagation();
+            setActiveIdx((i) => (i + 1) % total);
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            setActiveIdx((i) => (i - 1 + total) % total);
+            return;
+          }
+          if (e.key === "Enter" || e.key === "Tab") {
+            e.preventDefault();
+            e.stopPropagation();
+            const pick = flatList[activeIdx];
+            if (pick) choose(pick);
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(false);
+            setSwap(null);
+            return;
+          }
+        }
+        onKeyDownPassthrough?.(e);
+      },
+      [popOpen, total, activeIdx, flatList, choose, onKeyDownPassthrough],
+    );
+
+    // Click outside closes the popover. Capture phase: ReactFlow stops
+    // pointer events from bubbling.
     useEffect(() => {
-      if (!open) return;
+      if (!popOpen) return;
       const onDown = (e: Event) => {
         const t = e.target as HTMLElement | null;
         if (!t) return;
@@ -320,21 +396,18 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
         if (t === textareaRef.current) return;
         if (t.closest(".mention-wrap")) return;
         setOpen(false);
+        setSwap(null);
       };
-      // Capture phase = sees the event before ReactFlow swallows it.
       document.addEventListener("pointerdown", onDown, true);
       document.addEventListener("mousedown", onDown, true);
-      // Also dismiss on textarea blur — when focus moves away to any
-      // other UI control the popup should go with it.
       const ta = textareaRef.current;
       const onBlur = () => {
-        // 150ms delay so clicking a popup row (which briefly steals
-        // focus) doesn't close before the click handler runs.
         window.setTimeout(() => {
           const active = document.activeElement as HTMLElement | null;
           if (active?.closest(".flowboard-at-mention-popover")) return;
           if (active === textareaRef.current) return;
           setOpen(false);
+          setSwap(null);
         }, 150);
       };
       ta?.addEventListener("blur", onBlur);
@@ -343,21 +416,13 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
         document.removeEventListener("mousedown", onDown, true);
         ta?.removeEventListener("blur", onBlur);
       };
-    }, [open]);
+    }, [popOpen]);
 
-    // Mirror styling lives next to the visible textarea's styling so
-    // we can guarantee the overlay's text-metrics match. Anything
-    // affecting layout MUST be present on BOTH — and locked to
-    // explicit values (not "inherit") so wrapper CSS classes injected
-    // by the host (e.g. .gen-dialog__textarea) can't override one side
-    // without the other.
-    //
-    // The combo below mirrors what professional rich-text editors do
-    // for "overlay" mode (Slate, Lexical, etc.): fully lock down the
-    // font cascade.
+    // Everything that affects text layout is pinned here and applied to
+    // BOTH the textarea and the mirror; colours/borders live in CSS.
     const sharedFieldCss: CSSProperties = {
       fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif',
+        'var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)',
       fontSize: 13,
       fontWeight: 400,
       lineHeight: 1.5,
@@ -369,18 +434,16 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       textRendering: "geometricPrecision",
       tabSize: 4,
       padding: 10,
-      border: "1px solid transparent",
+      borderWidth: 1,
+      borderStyle: "solid",
       borderRadius: 8,
       boxSizing: "border-box",
       whiteSpace: "pre-wrap",
       wordWrap: "break-word",
       overflowWrap: "break-word",
+      wordBreak: "break-word",
     };
 
-    // Pull out the bits of user's style that affect layout (size) so the
-    // wrapper can position correctly. Everything VISUAL (color, bg, border,
-    // border-radius, padding) we ignore — we set those on the mirror/
-    // textarea pair directly so the mirror's metrics always line up.
     const wrapperLayoutStyle: CSSProperties = {
       flex: (style as Record<string, unknown> | undefined)?.flex as CSSProperties["flex"],
       minHeight: (style as Record<string, unknown> | undefined)?.minHeight as CSSProperties["minHeight"],
@@ -389,74 +452,56 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
       width: ((style as Record<string, unknown> | undefined)?.width as CSSProperties["width"]) ?? "100%",
       height: (style as Record<string, unknown> | undefined)?.height as CSSProperties["height"],
     };
-    // ZERO out any "undefined" props so they don't override inherits.
     Object.keys(wrapperLayoutStyle).forEach((k) => {
       const v = (wrapperLayoutStyle as Record<string, unknown>)[k];
       if (v === undefined) delete (wrapperLayoutStyle as Record<string, unknown>)[k];
     });
 
+    const currentShortId = swap?.shortId ?? null;
+
     return (
       <div
         ref={wrapperRef}
-        // `mention-wrap` is our own marker class — used by the
-        // click-outside handler to ignore clicks that land on the
-        // textarea OR its mirror overlay (both children of this wrap).
-        // The user's `className` is appended so layout/positioning
-        // styles still apply.
-        className={`mention-wrap${className ? ` ${className}` : ""}`}
+        className={`mention-wrap${plain ? " mention-wrap--plain" : ""}${className ? ` ${className}` : ""}`}
         style={{
           position: "relative",
           boxSizing: "border-box",
-          // CRITICAL: do NOT clip overflow — popup is portal'd anyway,
-          // but the wrapper must let the textarea's native scrollbar
-          // appear when needed.
           overflow: "visible",
           ...wrapperLayoutStyle,
         }}
       >
-        {/* Background mirror — renders the same text as the textarea
-            but with @-mention tokens highlighted as colored pills. Sits
-            behind the (transparent) textarea so the user sees the
-            highlights through it.
-
-            CRITICAL: this div MUST inherit textarea's exact font-metrics
-            (line-height, font-size, padding, wrap mode) for caret
-            position alignment. */}
-        {/* Highlight mirror — skipped in plain mode (the overlay drifts
-            under CSS scale, e.g. inside the ReactFlow canvas). */}
         {!plain && (
           <div
             ref={mirrorRef}
             aria-hidden="true"
+            className="mention-mirror"
             style={{
               ...sharedFieldCss,
+              paddingRight: 10 + scrollbarPad,
               position: "absolute",
               inset: 0,
-              color: "#e4e7ec",
-              background: "#0f1115",
-              border: "1px solid #2a2e38",
               pointerEvents: "none",
               overflow: "hidden",
-              wordBreak: "break-word",
             }}
           >
-            {renderHighlightedContent(value)}
+            {renderHighlightedContent(value, swap?.start ?? null)}
           </div>
         )}
 
-        {/* Real textarea. Default: transparent text over the mirror.
-            Plain mode: visible text, no mirror — robust under scale. */}
         <textarea
           ref={textareaRef}
+          className="mention-field"
           value={value}
           onChange={handleChange}
           onScroll={plain ? undefined : syncMirrorScroll}
           onKeyDown={handleKeyDown}
-          onFocus={updatePopPos}
+          onClick={handleClickInText}
+          onFocus={() => updatePopPos()}
           placeholder={placeholder}
           disabled={disabled}
           rows={rows}
           wrap="soft"
+          spellCheck={false}
           style={{
             ...sharedFieldCss,
             position: "relative",
@@ -464,71 +509,35 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
             display: "block",
             width: "100%",
             height: "100%",
-            color: plain ? "#e4e7ec" : "transparent",
-            background: plain ? "#0f1115" : "transparent",
-            caretColor: "#e4e7ec",
-            border: plain ? "1px solid #2a2e38" : "1px solid transparent",
             resize: "none",
             outline: "none",
-            // Match the mirror wrap.
-            wordBreak: "break-word",
           }}
         />
 
-        {/* Popover — portal'd to body. Two CRITICAL hacks for visibility:
-            1. Z-index near max int — beats any modal backdrop / overlay
-               on the page.
-            2. ``isolation: isolate`` on the inner card forces a fresh
-               stacking context so backdrop-filter etc don't bleed. */}
-        {open
-          && popPos
-          && total > 0
-          && createPortal(
+        {popOpen &&
+          popPos &&
+          total > 0 &&
+          createPortal(
             <div
-              className="flowboard-at-mention-popover"
+              className="flowboard-at-mention-popover mention-pop"
               role="listbox"
-              style={{
-                position: "fixed",
-                left: popPos.left,
-                top: popPos.top,
-                zIndex: 2147483647,
-                isolation: "isolate",
-                background: "#15171c",
-                border: "1px solid #3a3f4a",
-                borderRadius: 12,
-                boxShadow: "0 12px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)",
-                padding: 8,
-                minWidth: 320,
-                maxWidth: 420,
-                maxHeight: 360,
-                overflowY: "auto",
-                fontFamily: "system-ui, -apple-system, sans-serif",
-                fontSize: 13,
-                color: "#e4e7ec",
-              }}
+              style={{ left: popPos.left, top: popPos.top }}
             >
+              {swap && <div className="mention-pop__title">Đổi tag thành…</div>}
               {filteredConnected.length > 0 && (
                 <>
-                  <div style={sectionLabelStyle}>
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "#5db97a",
-                        display: "inline-block",
-                        marginRight: 6,
-                      }}
-                    />
-                    CONNECTED
+                  <div className="mention-pop__section">
+                    <span className="mention-pop__dot mention-pop__dot--on" />
+                    {swap ? "Đang nối vào node" : "Connected"}
                   </div>
                   {filteredConnected.map((n, i) => (
                     <MentionRow
                       key={`c-${n.id}`}
                       node={n}
                       connected
+                      current={n.shortId === currentShortId}
                       active={activeIdx === i}
-                      onClick={() => insertMention({ ...n, connected: true })}
+                      onClick={() => choose({ ...n, connected: true })}
                       onHover={() => setActiveIdx(i)}
                     />
                   ))}
@@ -536,18 +545,9 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
               )}
               {filteredDisconnected.length > 0 && (
                 <>
-                  <div style={{ ...sectionLabelStyle, marginTop: 8 }}>
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "#5a5f69",
-                        display: "inline-block",
-                        marginRight: 6,
-                      }}
-                    />
-                    NOT CONNECTED
+                  <div className="mention-pop__section">
+                    <span className="mention-pop__dot" />
+                    {swap ? "Chưa nối (sẽ tự nối)" : "Not connected"}
                   </div>
                   {filteredDisconnected.map((n, i) => {
                     const idx = filteredConnected.length + i;
@@ -556,8 +556,9 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
                         key={`d-${n.id}`}
                         node={n}
                         connected={false}
+                        current={n.shortId === currentShortId}
                         active={activeIdx === idx}
-                        onClick={() => insertMention({ ...n, connected: false })}
+                        onClick={() => choose({ ...n, connected: false })}
                         onHover={() => setActiveIdx(idx)}
                       />
                     );
@@ -572,15 +573,18 @@ export const MentionAutocomplete = forwardRef<MentionAutocompleteHandle, Props>(
   },
 );
 
+/** Text inserted for a node: `@<rename or Type> #<shortId>`. */
+function tokenFor(n: MentionNode): string {
+  const displayName = n.customTitle?.trim() || n.type;
+  return `@${displayName} #${n.shortId}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Mirror highlighting — turn raw text into ReactNodes where every
-// `@Type#shortId` token gets wrapped in a colored pill <span>.
+// Mirror highlighting — every `@Name #shortId` token becomes a pill <span>.
 // ─────────────────────────────────────────────────────────────────────
-function renderHighlightedContent(text: string): ReactNode[] {
-  // Trailing newline trick — textareas render an extra empty line at
-  // the bottom of a string ending with \n that <div> doesn't, throwing
-  // the alignment off by one row. Append a zero-width space so the
-  // div mirrors the same height.
+function renderHighlightedContent(text: string, swapStart: number | null): ReactNode[] {
+  // A trailing newline renders an extra empty row in a textarea but not in
+  // a div — pad it so heights match.
   const display = text.endsWith("\n") ? text + "​" : text;
 
   const parts: ReactNode[] = [];
@@ -588,162 +592,82 @@ function renderHighlightedContent(text: string): ReactNode[] {
   MENTION_COMPLETED_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = MENTION_COMPLETED_RE.exec(display)) !== null) {
-    if (m.index > lastIndex) {
-      parts.push(display.slice(lastIndex, m.index));
-    }
-    // CRITICAL: this span MUST NOT change text metrics. The textarea
-    // behind us renders the SAME characters with no styling — if we
-    // add padding/border/font-weight here, every character after the
-    // tag drifts further from its actual caret position.
-    //
-    // Trade-off: we get a less "pill-like" highlight (no padding,
-    // no border, normal font-weight), but the caret stays glued to
-    // the right letter as the user types past the mention.
+    if (m.index > lastIndex) parts.push(display.slice(lastIndex, m.index));
+    // The pill must not change text metrics (no padding / border / weight)
+    // or the caret drifts from the letters; the outline is a box-shadow.
     parts.push(
       <span
         key={`mention-${m.index}`}
-        style={{
-          color: "#c4b5fd",
-          background: "rgba(139, 92, 246, 0.22)",
-          borderRadius: 3,
-          // padding / border / font-weight would shift metrics; do NOT add them.
-          // Box-shadow draws a faux "border" that doesn't take up width.
-          boxShadow: "inset 0 0 0 1px rgba(139, 92, 246, 0.45)",
-        }}
+        data-ms={m.index}
+        className={`mention-tag${swapStart === m.index ? " mention-tag--swapping" : ""}`}
       >
         {m[0]}
       </span>,
     );
     lastIndex = m.index + m[0].length;
   }
-  if (lastIndex < display.length) {
-    parts.push(display.slice(lastIndex));
-  }
+  if (lastIndex < display.length) parts.push(display.slice(lastIndex));
   return parts;
 }
-
-const sectionLabelStyle: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: 1.2,
-  color: "#8a8f99",
-  padding: "6px 10px 6px",
-  textTransform: "uppercase",
-  display: "flex",
-  alignItems: "center",
-};
 
 function MentionRow({
   node,
   connected,
+  current,
   active,
   onClick,
   onHover,
 }: {
   node: MentionNode;
   connected: boolean;
+  current?: boolean;
   active: boolean;
   onClick: () => void;
   onHover: () => void;
 }) {
   return (
     <div
-      // Keep the textarea focused — mousedown default would blur it,
-      // which (in the inline node editor) closes the editor before the
-      // tag is inserted. preventDefault keeps focus so the click inserts.
+      // Keep the textarea focused — a blur would close the inline editor
+      // before the pick lands.
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       onMouseEnter={onHover}
       role="option"
       aria-selected={active}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "9px 12px",
-        borderRadius: 8,
-        cursor: "pointer",
-        background: active ? "#2a2e38" : "transparent",
-        userSelect: "none",
-        transition: "background 0.08s",
-      }}
+      className={`mention-row${active ? " mention-row--active" : ""}${current ? " mention-row--current" : ""}`}
     >
-      <span
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 6,
-          background: connected ? "rgba(139, 92, 246, 0.18)" : "#22262e",
-          color: connected ? "#c4b5fd" : "#8a8f99",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 13,
-          flexShrink: 0,
-        }}
-      >
-        {iconForType(node.type)}
-      </span>
-      <div style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
-        {/* When the node has a user-assigned title, surface that as the
-            primary text (mirroring Magnific's "rename then @-search"
-            workflow). Type + shortId become the secondary line so the
-            user still knows which canonical node they're picking. */}
+      {node.thumbUrl ? (
+        <img className="mention-row__thumb" src={node.thumbUrl} alt="" draggable={false} />
+      ) : (
+        <span className={`mention-row__icon${connected ? " mention-row__icon--on" : ""}`}>
+          {iconForType(node.type)}
+        </span>
+      )}
+      <div className="mention-row__text">
         {node.customTitle ? (
           <>
-            <div style={{ fontWeight: 600 }}>{node.customTitle}</div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "#8a8f99",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                marginTop: 1,
-              }}
-            >
+            <div className="mention-row__name">{node.customTitle}</div>
+            <div className="mention-row__sub">
               {node.type} #{node.shortId}
             </div>
           </>
         ) : (
           <>
-            <div style={{ fontWeight: 600 }}>
+            <div className="mention-row__name">
               {node.type} #{node.shortId}
             </div>
-            {node.label && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "#8a8f99",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  marginTop: 1,
-                }}
-              >
-                {node.label}
-              </div>
-            )}
+            {node.label && <div className="mention-row__sub">{node.label}</div>}
           </>
         )}
       </div>
-      {!connected && (
-        <span
-          title="Picking this will auto-create an edge"
-          style={{
-            fontSize: 10,
-            color: "#5db97a",
-            background: "rgba(93, 185, 122, 0.12)",
-            border: "1px solid rgba(93, 185, 122, 0.4)",
-            padding: "2px 7px",
-            borderRadius: 4,
-            fontWeight: 600,
-            letterSpacing: 0.3,
-            flexShrink: 0,
-          }}
-        >
-          + link
-        </span>
+      {current ? (
+        <span className="mention-row__badge mention-row__badge--current">Đang dùng</span>
+      ) : (
+        !connected && (
+          <span className="mention-row__badge" title="Chọn sẽ tự nối dây vào node">
+            + nối
+          </span>
+        )
       )}
     </div>
   );
@@ -777,8 +701,6 @@ function filterNodes(nodes: MentionNode[], query: string): MentionNode[] {
   if (!query) return nodes;
   const q = query.toLowerCase();
   return nodes.filter((n) => {
-    // Custom title gets first chance — that's the name the user
-    // explicitly chose to look the node up by.
     if (n.customTitle?.toLowerCase().includes(q)) return true;
     if (n.type.toLowerCase().includes(q)) return true;
     if (n.shortId.toLowerCase().includes(q)) return true;

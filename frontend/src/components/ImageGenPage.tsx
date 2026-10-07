@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../store/board";
 import { useGenerationStore } from "../store/generation";
 import { useSettingsStore, IMAGE_MODEL_OPTIONS, type ImageModelKey } from "../store/settings";
+import { ChipSelect } from "./ChipSelect";
 import { mediaUrl, uploadImage } from "../api/client";
 import { IconArrowUp, IconImage, IconPlus, IconSpinner } from "../canvas/icons";
 import {
@@ -176,18 +177,14 @@ export function ImageGenPage() {
         </h2>
 
         <span className="imagegen-form__label">MODEL</span>
-        <select
-          className="imagegen-form__model"
+        <ChipSelect<ImageModelKey>
+          variant="field"
           value={imageModel}
-          onChange={(e) => setImageModel(e.target.value as ImageModelKey)}
-          aria-label="Image model"
-        >
-          {IMAGE_MODEL_OPTIONS.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          heading="Model ảnh"
+          options={IMAGE_MODEL_OPTIONS.map((m) => ({ value: m.key, label: m.label, hint: m.hint }))}
+          onChange={setImageModel}
+          ariaLabel="Image model"
+        />
 
         <span className="imagegen-form__label">
           REFERENCES <span style={{ marginLeft: "auto" }}>{refs.length}/4</span>
@@ -277,18 +274,13 @@ export function ImageGenPage() {
             </button>
           </span>
           {/* Aspect */}
-          <select
-            className="node-chip node-chip--select"
+          <ChipSelect
             value={aspect}
-            onChange={(e) => setAspect(e.target.value)}
-            aria-label="Aspect ratio"
-          >
-            {ASPECTS.map((a) => (
-              <option key={a.v} value={a.v}>
-                ▭ {a.label}
-              </option>
-            ))}
-          </select>
+            heading="Tỉ lệ khung"
+            options={ASPECTS.map((a) => ({ value: a.v, label: `▭ ${a.label}` }))}
+            onChange={(v) => setAspect(String(v))}
+            ariaLabel="Aspect ratio"
+          />
         </div>
 
         <button

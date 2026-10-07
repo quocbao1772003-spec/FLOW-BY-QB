@@ -19,6 +19,10 @@ import {
   type ImageInfo,
   type NamingFormula,
 } from "../lib/imageExport";
+import { patchCornerMark, type PatchResult } from "../lib/cornerPatch";
+import { altTextFromFileName, tagImageMetadata } from "../lib/aiMetadata";
+import { useBoardStore } from "../store/board";
+import { mediaUrl } from "../api/client";
 import "./DownloadDialog.css";
 
 /**
@@ -38,6 +42,8 @@ interface Custom {
 }
 
 interface Saved {
+  /** Cover the ✦ corner mark with the base photo wired into the node. */
+  patchMark: boolean;
   mode: "formula" | "original";
   formula: NamingFormula;
   preset: PresetId;
@@ -52,6 +58,7 @@ const PRESETS: Array<{ id: PresetId; title: string; hint: string }> = [
 ];
 
 const DEFAULTS: Saved = {
+  patchMark: true,
   mode: "formula",
   formula: { designer: "", collection: "", seq: "", product: "" },
   // WEBP every time the dialog opens — the light format for the web shop.
@@ -67,6 +74,7 @@ function loadSaved(): Saved {
     if (!raw) return DEFAULTS;
     const p = JSON.parse(raw) as Partial<Saved>;
     return {
+      patchMark: p.patchMark !== false,
       mode: p.mode === "original" ? "original" : "formula",
       formula: (() => {
         const f = (p.formula ?? {}) as Partial<NamingFormula> & { sku?: string };
@@ -137,6 +145,37 @@ function outExt(format: ExportFormat | null, info: ImageInfo | undefined, item: 
   return m ? m[1].toLowerCase() : "png";
 }
 
+interface BaseRef {
+  url: string;
+  shortId: string;
+}
+
+/** Images wired into a node — the photos a generated image was based on. */
+function baseRefsFor(nodeId: string | undefined): BaseRef[] {
+  if (!nodeId) return [];
+  const { nodes, edges } = useBoardStore.getState();
+  const out: BaseRef[] = [];
+  for (const e of edges) {
+    if (e.target !== nodeId) continue;
+    const n = nodes.find((x) => x.id === e.source);
+    if (!n) continue;
+    const d = n.data as Record<string, unknown>;
+    const mid =
+      (typeof d.mediaId === "string" && d.mediaId) ||
+      (Array.isArray(d.mediaIds)
+        ? (d.mediaIds as unknown[]).find((m): m is string => typeof m === "string" && !!m)
+        : undefined);
+    if (mid && !out.some((o) => o.url === mediaUrl(mid))) {
+      out.push({ url: mediaUrl(mid), shortId: String(d.shortId ?? n.id) });
+    }
+  }
+  return out;
+}
+
+type PatchState = { status: "pending" } | { status: "none" } | { status: "nomatch" } | { status: "ok"; result: PatchResult; base: string };
+
+const MIME_FORMAT: Record<string, ExportFormat> = { "image/jpeg": "jpeg", "image/png": "png", "image/webp": "webp" };
+
 function fitDims(info: ImageInfo | undefined, o: Resolved): string {
   if (!info) return "";
   let s = 1;
@@ -159,6 +198,7 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
   const [infos, setInfos] = useState<Array<ImageInfo | undefined>>([]);
   const [thumbs, setThumbs] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [patches, setPatches] = useState<PatchState[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const update = (patch: Partial<Saved>) => setSaved((s) => ({ ...s, ...patch }));
@@ -205,6 +245,44 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [items]);
+
+  // Work out the corner patch for every image once its bytes are loaded.
+  const bytesReady = blobs.some((b) => b !== null);
+  useEffect(() => {
+    if (!saved.patchMark || !bytesReady) return;
+    let alive = true;
+    setPatches(items.map(() => ({ status: "pending" })));
+    (async () => {
+      for (let i = 0; i < items.length; i++) {
+        const refs = baseRefsFor(items[i].nodeId);
+        let st: PatchState;
+        const src = blobs[i];
+        if (!src || refs.length === 0) {
+          st = { status: "none" };
+        } else {
+          try {
+            const bases = (
+              await Promise.all(refs.map((r) => fetchBlob(r.url).catch(() => null)))
+            ).filter((b): b is Blob => b !== null);
+            const res = await patchCornerMark(src, bases);
+            st = res ? { status: "ok", result: res, base: refs[res.baseIndex]?.shortId ?? "" } : { status: "nomatch" };
+          } catch (e) {
+            console.error("[download] corner patch failed:", e);
+            st = { status: "nomatch" };
+          }
+        }
+        if (!alive) return;
+        setPatches((ps) => {
+          const next = ps.slice();
+          next[i] = st;
+          return next;
+        });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [items, blobs, bytesReady, saved.patchMark]);
 
   // Esc closes (unless converting).
   useEffect(() => {
@@ -267,10 +345,23 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
     for (let i = 0; i < items.length; i++) {
       setBusy(`Đang chuyển đổi ${i + 1}/${items.length}…`);
       try {
-        const src = blobs[i] ?? (items[i].url ? await fetchBlob(items[i].url!) : null);
-        if (!src) throw new Error("không có dữ liệu ảnh");
-        const out = await convertImage(src, opts);
-        saveBlob(out.blob, names[i]);
+        const original = blobs[i] ?? (items[i].url ? await fetchBlob(items[i].url!) : null);
+        if (!original) throw new Error("không có dữ liệu ảnh");
+        const p = saved.patchMark ? patches[i] : undefined;
+        const patched = p && p.status === "ok" ? p.result.blob : null;
+        // A patched image is a fresh PNG; "keep original" then means keep
+        // the original FORMAT, so re-encode it to that.
+        const o = patched && opts.format === null
+          ? { ...opts, format: MIME_FORMAT[infos[i]?.mime ?? ""] ?? "png", quality: 95 }
+          : opts;
+        const out = await convertImage(patched ?? original, o);
+        // Alt text = the readable file name, always. When the corner mark was
+        // covered, also record in the file itself that it's AI-made.
+        const blob = await tagImageMetadata(out.blob, out.width, out.height, {
+          altText: altTextFromFileName(names[i]),
+          aiGenerated: !!patched,
+        });
+        saveBlob(blob, names[i]);
       } catch (e) {
         failed++;
         console.error("[download] convert failed:", e);
@@ -287,6 +378,8 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
   }
 
   const n = items.length;
+  const patchPending = saved.patchMark && patches.some((p) => p?.status === "pending");
+  const anyBase = items.some((it) => baseRefsFor(it.nodeId).length > 0);
 
   return (
     <div className="dl-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
@@ -342,6 +435,60 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
               })}
             </ul>
           </section>
+
+          {/* ── Corner mark ────────────────────────────────────────── */}
+          {anyBase && (
+            <section className="dl-section">
+              <div className="dl-radio-row">
+                <label className="dl-switch">
+                  <input
+                    type="checkbox"
+                    checked={saved.patchMark}
+                    onChange={(e) => update({ patchMark: e.target.checked })}
+                  />
+                  <span className="dl-switch__track" aria-hidden="true">
+                    <span className="dl-switch__knob" />
+                  </span>
+                  <span>Che dấu ✦ ở góc bằng ảnh gốc</span>
+                </label>
+              </div>
+              <p className="dl-note dl-note--flush">
+                Lấy đúng góc đó từ ảnh gốc đang nối vào node, tự dò và khớp toạ độ rồi hoà màu. File tải về được ghi
+                chú “AI-generated” trong metadata.
+              </p>
+              {saved.patchMark && (
+                <ul className="dl-patches">
+                  {items.map((it, i) => {
+                    const p = patches[i];
+                    return (
+                      <li key={i} className="dl-patch">
+                        {p?.status === "ok" ? (
+                          <>
+                            <img src={p.result.before} alt="Trước" />
+                            <span className="dl-arrow" aria-hidden="true">→</span>
+                            <img src={p.result.after} alt="Sau" />
+                            <span className="dl-patch__note">
+                              {it.label ? `${it.label} · ` : ""}khớp với ảnh gốc #{p.base}
+                              {p.result.box.detected ? "" : " · vị trí mặc định"}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="dl-patch__note">
+                            {it.label ? `${it.label} · ` : ""}
+                            {!p || p.status === "pending"
+                              ? "Đang dò vị trí dấu…"
+                              : p.status === "none"
+                                ? "Không có ảnh gốc nối vào node — giữ nguyên"
+                                : "Góc ảnh gốc khác quá nhiều so với ảnh mới — giữ nguyên"}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
 
           {/* ── Naming ─────────────────────────────────────────────── */}
           <section className="dl-section">
@@ -577,7 +724,7 @@ function DialogBody({ items, onClose }: { items: DownloadItem[]; onClose: () => 
             type="button"
             className="dl-btn dl-btn--primary"
             onClick={() => void run()}
-            disabled={!!busy || loading || nameMissing}
+            disabled={!!busy || loading || nameMissing || patchPending}
             title={nameMissing ? "Nhập mã SKU hoặc tên sản phẩm" : undefined}
           >
             {busy ? "Đang xử lý…" : `Tải về ${n} ảnh`}

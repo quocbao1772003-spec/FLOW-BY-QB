@@ -1,0 +1,220 @@
+/* ── @-mention field: textarea over a highlight mirror ────────────────── */
+
+.mention-mirror,
+.mention-field {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.mention-mirror {
+  color: var(--fg-1, #e4e4e7);
+  background: var(--surface-0, #141316);
+}
+
+/* Over the mirror the textarea only draws the caret and the selection. */
+.mention-wrap:not(.mention-wrap--plain) .mention-field {
+  color: transparent;
+  background: transparent;
+  caret-color: var(--fg-0, #fff);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.mention-wrap:not(.mention-wrap--plain) .mention-field::selection {
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.3);
+  color: transparent;
+}
+
+.mention-wrap--plain .mention-field {
+  color: var(--fg-1, #e4e4e7);
+  background: var(--surface-0, #141316);
+  caret-color: var(--fg-0, #fff);
+}
+
+.mention-field::placeholder {
+  color: var(--fg-4, #7a7880);
+  opacity: 1;
+}
+
+.mention-wrap:focus-within .mention-mirror,
+.mention-wrap--plain:focus-within .mention-field {
+  border-color: rgba(var(--accent-rgb, 242, 85, 143), 0.45);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 242, 85, 143), 0.1);
+}
+
+.mention-field:disabled {
+  cursor: not-allowed;
+}
+
+/* Tag pill — background + box-shadow only, so text metrics stay identical
+   to the transparent textarea on top. */
+.mention-tag {
+  color: var(--accent-soft, #ff9cc3);
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.16);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 242, 85, 143), 0.32);
+}
+
+.mention-tag--swapping {
+  color: #fff;
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.42);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 242, 85, 143), 0.8);
+}
+
+/* ── Picker popover (portalled to body) ───────────────────────────────── */
+
+.mention-pop {
+  position: fixed;
+  z-index: 2147483647;
+  isolation: isolate;
+  min-width: 300px;
+  max-width: 400px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(27, 26, 30, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 22px 48px -14px rgba(0, 0, 0, 0.8),
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  font-family: var(--font-ui, "Geist", system-ui, sans-serif);
+  font-size: 12.5px;
+  color: var(--fg-1, #e4e4e7);
+  animation: mention-pop-in 0.14s ease-out;
+}
+
+@keyframes mention-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mention-pop__title {
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-0, #fff);
+}
+
+.mention-pop__section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-4, #7a7880);
+}
+
+.mention-pop__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.mention-pop__dot--on {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+}
+
+.mention-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.08s ease;
+}
+
+.mention-row--active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mention-row--current {
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.1);
+}
+
+.mention-row--current.mention-row--active {
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.16);
+}
+
+.mention-row__thumb,
+.mention-row__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+.mention-row__thumb {
+  object-fit: cover;
+  background: var(--surface-2, #242328);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.mention-row__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg-3, #a1a1aa);
+}
+
+.mention-row__icon--on {
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.14);
+  color: var(--accent-soft, #ff9cc3);
+}
+
+.mention-row__text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.mention-row__name {
+  font-weight: 600;
+  color: var(--fg-0, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-row__sub {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--fg-4, #7a7880);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-row__badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.mention-row__badge--current {
+  color: var(--accent-soft, #ff9cc3);
+  background: rgba(var(--accent-rgb, 242, 85, 143), 0.12);
+  border-color: rgba(var(--accent-rgb, 242, 85, 143), 0.35);
+}

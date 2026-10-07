@@ -901,3 +901,18 @@ a.account-panel__version-link:hover code {
     transition-duration: 0ms !important;
   }
 }
+
+/* Hint under the inline prompt editor */
+.node-genprompt-hint {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.01em;
+}
+
+/* Account chip without a Google photo shows the app mark */
+.account-panel__avatar--logo {
+  background: none;
+  border-radius: 9px;
+  box-shadow: 0 3px 10px -4px rgba(var(--accent-rgb), 0.6);
+}

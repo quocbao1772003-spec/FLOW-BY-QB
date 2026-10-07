@@ -15,6 +15,9 @@ export interface DownloadItem {
   blob?: Blob;
   /** Short context shown in the dialog, e.g. "#cgyl · biến thể 2". */
   label?: string;
+  /** Canvas node the image belongs to — lets the dialog find the base
+   *  images wired into it (corner patch). */
+  nodeId?: string;
 }
 
 interface DownloadState {

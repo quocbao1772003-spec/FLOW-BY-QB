@@ -12,6 +12,7 @@ import {
 } from "../store/settings";
 import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
 import { useReferencesStore } from "../store/references";
+import { ChipSelect } from "../components/ChipSelect";
 import {
   normaliseStoryboardGrid,
   resolveStoryboardLayout,
@@ -1864,6 +1865,28 @@ function ImageInputHandles({ rfId, data }: { rfId: string; data: FlowboardNodeDa
   );
 }
 
+/** Tiny outline rectangle drawn in the chosen ratio (1:1, 16:9, 3:4 …). */
+function AspectGlyph({ ratio }: { ratio: string }) {
+  const [w, h] = ratio.split(":").map(Number);
+  const k = 10 / Math.max(w || 1, h || 1);
+  const rw = Math.max(4, (w || 1) * k);
+  const rh = Math.max(4, (h || 1) * k);
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <rect
+        x={(12 - rw) / 2}
+        y={(12 - rh) / 2}
+        width={rw}
+        height={rh}
+        rx="1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
 function downloadExt(type: string): string {
   if (type === "video") return "mp4";
   return "png";
@@ -1917,6 +1940,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
         url: mediaUrl(mid),
         name: `${safeTitle}-${data.shortId}${ids.length > 1 ? `-${i + 1}` : ""}.${ext}`,
         label: `#${data.shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
+        nodeId: props.id,
       })),
     );
   }
@@ -1985,10 +2009,16 @@ export function NodeCard(props: NodeProps<FlowNode>) {
         (typeof d.prompt === "string" && d.prompt) ||
         (typeof d.assistantResponse === "string" && d.assistantResponse) ||
         "";
+      const thumbId =
+        (typeof d.mediaId === "string" && d.mediaId) ||
+        (Array.isArray(d.mediaIds)
+          ? (d.mediaIds as unknown[]).find((m): m is string => typeof m === "string" && !!m)
+          : undefined);
       return {
         id: n.id,
         type: ty,
         shortId: (d.shortId as string) ?? n.id,
+        thumbUrl: thumbId ? mediaUrl(thumbId) : undefined,
         label: rawLabel.replace(/\s+/g, " ").slice(0, 60),
         customTitle:
           typeof d.title === "string" && d.title.trim()
@@ -2252,9 +2282,7 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   const aspectValue =
     aspectOptions.find((o) => o.v === data.aspectRatio)?.v ?? aspectOptions[0].v;
 
-  function onAspectChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    e.stopPropagation();
-    const v = e.target.value;
+  function onAspectChange(v: string) {
     useBoardStore.getState().updateNodeData(props.id, { aspectRatio: v });
     const dbId = parseInt(props.id, 10);
     if (!isNaN(dbId)) {
@@ -2385,9 +2413,11 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                     : "Describe the image — gõ @ để tag node…"
                 }
                 rows={3}
-                plain
                 className="node-genprompt-editor nodrag nowheel"
               />
+              {/@[^@\n#]+?\s?#[A-Za-z0-9_-]+/.test(promptDraft) && (
+                <div className="node-genprompt-hint">Bấm vào tag để đổi sang ảnh / node khác</div>
+              )}
             </div>
           ) : (
             <div
@@ -2447,12 +2477,16 @@ export function NodeCard(props: NodeProps<FlowNode>) {
               </button>
             </span>
             {isVideoGen ? (
-              <select
-                className="node-chip node-chip--select nodrag"
+              <ChipSelect
                 value={videoModelFamily === "omni_flash" ? "omni" : `veo:${videoQuality}`}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  const v = e.target.value;
+                heading="Model video"
+                options={[
+                  { value: "veo:lite", label: "Veo Lite", menuLabel: "Veo 3.1 Lite", hint: "Nhanh nhất" },
+                  { value: "veo:fast", label: "Veo Fast", menuLabel: "Veo 3.1 Fast", hint: "Cân bằng" },
+                  { value: "veo:quality", label: "Veo Quality", menuLabel: "Veo 3.1 Quality", hint: "Đẹp nhất, chậm" },
+                  { value: "omni", label: "Omni Flash", menuLabel: "Omni Flash", hint: "Từ ảnh tham chiếu" },
+                ]}
+                onChange={(v) => {
                   if (v === "omni") {
                     setVideoModel("omni_flash");
                   } else {
@@ -2464,68 +2498,48 @@ export function NodeCard(props: NodeProps<FlowNode>) {
                     setVideoQuality(q);
                   }
                 }}
-                onClick={(e) => e.stopPropagation()}
                 title="Model video — Veo Lite/Fast nhanh hơn Omni Flash"
-                aria-label="Video model"
-              >
-                <option value="veo:lite">Veo 3.1 Lite (nhanh)</option>
-                <option value="veo:fast">Veo 3.1 Fast</option>
-                <option value="veo:quality">Veo 3.1 Quality</option>
-                <option value="omni">Omni Flash</option>
-              </select>
+                ariaLabel="Video model"
+              />
             ) : (
-              <select
-                className="node-chip node-chip--select nodrag"
+              <ChipSelect<ImageModelKey>
                 value={imageModel}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  setImageModel(e.target.value as ImageModelKey);
-                }}
-                onClick={(e) => e.stopPropagation()}
+                heading="Model ảnh"
+                options={IMAGE_MODEL_OPTIONS.map((m) => ({
+                  value: m.key,
+                  label: m.short,
+                  menuLabel: m.label,
+                  hint: m.hint,
+                }))}
+                onChange={setImageModel}
                 title="Model tạo ảnh — áp dụng cho các lần tạo ảnh tiếp theo (giống mục Cài đặt)"
-                aria-label="Image model"
-              >
-                {IMAGE_MODEL_OPTIONS.map((m) => (
-                  <option key={m.key} value={m.key} title={m.hint}>
-                    {m.short}
-                  </option>
-                ))}
-              </select>
+                ariaLabel="Image model"
+              />
             )}
-            <select
-              className="node-chip node-chip--select nodrag"
+            <ChipSelect
               value={aspectValue}
+              heading="Tỉ lệ khung"
+              options={aspectOptions.map((o) => ({
+                value: o.v,
+                label: (
+                  <>
+                    <AspectGlyph ratio={o.label} /> {o.label}
+                  </>
+                ),
+              }))}
               onChange={onAspectChange}
-              onClick={(e) => e.stopPropagation()}
               title="Aspect ratio"
-              aria-label="Aspect ratio"
-            >
-              {aspectOptions.map((o) => (
-                <option key={o.v} value={o.v}>
-                  ▭ {o.label}
-                </option>
-              ))}
-            </select>
+              ariaLabel="Aspect ratio"
+            />
             {isVideoGen && videoModelFamily === "omni_flash" && (
-              <select
-                className="node-chip node-chip--select nodrag"
+              <ChipSelect<OmniFlashDuration>
                 value={omniFlashDuration}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  setOmniFlashDuration(
-                    parseInt(e.target.value, 10) as OmniFlashDuration,
-                  );
-                }}
-                onClick={(e) => e.stopPropagation()}
+                heading="Thời lượng"
+                options={OMNI_FLASH_DURATIONS.map((d) => ({ value: d, label: `⏱ ${d}s` }))}
+                onChange={setOmniFlashDuration}
                 title="Thời lượng video (Omni Flash)"
-                aria-label="Duration"
-              >
-                {OMNI_FLASH_DURATIONS.map((d) => (
-                  <option key={d} value={d}>
-                    ⏱ {d}s
-                  </option>
-                ))}
-              </select>
+                ariaLabel="Duration"
+              />
             )}
             <span className="node-genfooter__spacer" />
             <button

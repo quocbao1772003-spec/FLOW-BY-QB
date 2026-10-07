@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { requestDownload } from "../store/download";
 import { refFromNode, useAiChatStore } from "../store/aiChat";
 import { useBoardStore } from "../store/board";
-import { mediaUrl, upscaleImage, upscaleImageLocal } from "../api/client";
+import { mediaUrl, upscaleImage } from "../api/client";
 import { useGenerationStore } from "../store/generation";
 import { FullscreenImageViewer } from "../components/FullscreenImageViewer";
 import { RunSplitButton } from "./SelectionToolbar";
@@ -96,6 +96,7 @@ export function ImageNodeToolbar({
         url: mediaUrl(mid),
         name: `${safe}-${shortId}${ids.length > 1 ? `-${i + 1}` : ""}.${ext}`,
         label: `#${shortId}${ids.length > 1 ? ` · biến thể ${i + 1}` : ""}`,
+        nodeId: rfId,
       })),
     );
   }, [rfId, node]);
@@ -113,31 +114,11 @@ export function ImageNodeToolbar({
     try {
       const blob = await upscaleImage(activeMediaId, projectId, "2K");
       const { safe, shortId } = nameParts();
-      requestDownload([{ kind: "image", blob, name: `${safe}-${shortId}-2K.png`, label: `#${shortId} · 2K` }]);
+      requestDownload([{ kind: "image", blob, name: `${safe}-${shortId}-2K.png`, label: `#${shortId} · 2K`, nodeId: rfId }]);
     } catch (err) {
       useGenerationStore.setState({
         error:
           err instanceof Error ? `Upscale 2K thất bại: ${err.message}` : "Upscale 2K thất bại",
-      });
-    } finally {
-      setUpscaling(false);
-    }
-  }, [activeMediaId, upscaling, rfId, node]);
-
-  // 2K (local AI) = Real-ESRGAN on the machine (Lanczos fallback). Faithful,
-  // no Flow / no quota. See routes/upscale.py.
-  const handleDownload2KLocal = useCallback(async () => {
-    setDlOpen(false);
-    if (!activeMediaId || upscaling) return;
-    setUpscaling(true);
-    try {
-      const blob = await upscaleImageLocal(activeMediaId, "2K");
-      const { safe, shortId } = nameParts();
-      requestDownload([{ kind: "image", blob, name: `${safe}-${shortId}-2K-ai.png`, label: `#${shortId} · 2K làm nét` }]);
-    } catch (err) {
-      useGenerationStore.setState({
-        error:
-          err instanceof Error ? `Làm nét 2K thất bại: ${err.message}` : "Làm nét 2K thất bại",
       });
     } finally {
       setUpscaling(false);
@@ -244,13 +225,6 @@ export function ImageNodeToolbar({
               onClick={handleDownload1K}
             >
               Tải 1K (gốc)
-            </button>
-            <button
-              type="button"
-              className="image-node-toolbar__menu-item"
-              onClick={() => void handleDownload2KLocal()}
-            >
-              Tải 2K (làm nét AI · local)
             </button>
             <button
               type="button"

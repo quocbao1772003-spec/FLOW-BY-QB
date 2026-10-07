@@ -439,6 +439,7 @@ export function ResultViewer() {
         url: mediaUrl(mid),
         name: `${safeTitle}-${data.shortId}${suffix}.${ext}`,
         label: `#${data.shortId}`,
+        nodeId: rfId ?? undefined,
       },
     ]);
   }
@@ -466,7 +467,7 @@ export function ResultViewer() {
         "_",
       );
       requestDownload([
-        { kind: "image", blob, name: `${safeTitle}-${data.shortId}-2K.png`, label: `#${data.shortId} · 2K` },
+        { kind: "image", blob, name: `${safeTitle}-${data.shortId}-2K.png`, label: `#${data.shortId} · 2K`, nodeId: rfId ?? undefined },
       ]);
     } catch (err) {
       useGenerationStore.setState({

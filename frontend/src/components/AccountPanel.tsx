@@ -204,7 +204,7 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
             panel has no actionable controls (logout disabled). */}
         {email && (
           <div
-            className={`account-panel__avatar${picture ? " account-panel__avatar--photo" : ""}`}
+            className={`account-panel__avatar${picture ? " account-panel__avatar--photo" : " account-panel__avatar--logo"}`}
             title={collapsed ? `${displayName} · ${tierLabel}` : undefined}
             aria-hidden="true"
           >
@@ -215,13 +215,14 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   // Google avatar URL can 403 if the user signed out —
-                  // hide the broken image and let the initial fallback
-                  // shine through.
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                  // fall back to the app logo.
+                  const img = e.currentTarget as HTMLImageElement;
+                  if (!img.src.endsWith("/favicon.svg")) img.src = "/favicon.svg";
                 }}
               />
             ) : (
-              initial
+              // No Google photo: show the Flowboard mark, not a letter.
+              <img src="/favicon.svg" alt="" title={initial} />
             )}
           </div>
         )}
