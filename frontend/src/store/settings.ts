@@ -14,7 +14,35 @@ import { create } from "zustand";
  * rather than a switchable preference. When/if Flow ships variants per
  * tier (e.g. fast vs quality) we extend this store with `videoModelKey`.
  */
-export type ImageModelKey = "NANO_BANANA_PRO" | "NANO_BANANA_2";
+export type ImageModelKey =
+  | "NANO_BANANA_PRO"
+  | "NANO_BANANA_2_1"
+  | "NANO_BANANA_2"
+  | "NANO_BANANA_2_LITE";
+
+/** Image models offered by Google Flow (picker order = Flow's own menu).
+ *  `short` is the node-chip label. Backend maps key → Flow model tag. */
+export const IMAGE_MODEL_OPTIONS: {
+  key: ImageModelKey;
+  label: string;
+  short: string;
+  hint: string;
+}[] = [
+  { key: "NANO_BANANA_PRO", label: "Nano Banana Pro", short: "🍌 Pro",
+    hint: "GEM_PIX_2 — chất lượng cao nhất, chậm hơn" },
+  { key: "NANO_BANANA_2_1", label: "Nano Banana 2.1", short: "🍌 2.1",
+    hint: "Model mới nhất của Flow (10/2026) — mặc định trên Flow" },
+  { key: "NANO_BANANA_2", label: "Nano Banana 2", short: "🍌 2",
+    hint: "NARWHAL — bản trước của 2.1, nhanh" },
+  { key: "NANO_BANANA_2_LITE", label: "Nano Banana 2 Lite", short: "🍌 2 Lite",
+    hint: "HARBOR_SEAL — nhẹ và nhanh nhất" },
+];
+
+export const imageModelLabel = (key: string | undefined | null): string =>
+  IMAGE_MODEL_OPTIONS.find((m) => m.key === key)?.label ?? (key || "");
+
+const isImageModelKey = (v: unknown): v is ImageModelKey =>
+  IMAGE_MODEL_OPTIONS.some((m) => m.key === v);
 // Veo 3.1 ships in four flavours:
 //   - Lite (smaller checkpoint, fastest, lower fidelity)
 //   - Fast (default — bigger model, balanced)
@@ -93,7 +121,7 @@ const persisted = loadPersisted();
 const VALID_VIDEO_QUALITIES: VideoQuality[] = ["fast", "lite", "quality", "lite_relaxed"];
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  imageModel: persisted.imageModel ?? "NANO_BANANA_2",
+  imageModel: isImageModelKey(persisted.imageModel) ? persisted.imageModel : "NANO_BANANA_2",
   videoQuality:
     persisted.videoQuality && VALID_VIDEO_QUALITIES.includes(persisted.videoQuality)
       ? persisted.videoQuality

@@ -963,6 +963,10 @@ function boqOnSample(sample) {
   const freq = body.get('f.req');
   if (!rpcId || !freq) return;
 
+  if (rpcId === BOQ_RPC_IMAGE) {
+    try { boqNoteModelTag(JSON.parse(JSON.parse(freq)[0][0][1])); } catch (e) { /* not ours to read */ }
+  }
+
   const needs = !boqTemplate
     || boqHealth.stale
     || (bl && boqTemplate.bl && bl !== boqTemplate.bl)
@@ -1340,13 +1344,18 @@ async function boqGenerateInPage(cfg) {
     // Name the status so the agent can react to it (5 = NOT_FOUND means a
     // reference image or the project is unknown to Flow) instead of seeing a
     // generic NO_MEDIA_URL.
-    const st = String(text).match(/\["wrb\.fr","[^"]*",null,null,null,\[(\d+)\]/);
+    // The status array may carry details after the code — e.g. a daily quota
+    // refusal is [8,null,[["type.googleapis.com/google.rpc.ErrorInfo",
+    // ["PUBLIC_ERROR_PER_MODEL_DAILY_QUOTA_REACHED"]]]] — so accept "," or "]".
+    const st = String(text).match(/\["wrb\.fr","[^"]*",null,null,null,\[(\d+)[,\]]/);
     if (st) {
       const NAMES = { 3: 'INVALID_ARGUMENT', 5: 'NOT_FOUND', 7: 'PERMISSION_DENIED',
                       8: 'RESOURCE_EXHAUSTED', 9: 'FAILED_PRECONDITION', 13: 'INTERNAL',
                       14: 'UNAVAILABLE', 16: 'UNAUTHENTICATED' };
       const code = Number(st[1]);
-      return { error: 'RPC_' + code + '_' + (NAMES[code] || 'STATUS'), head: String(text).slice(0, 400),
+      const why = String(text).match(/PUBLIC_ERROR_[A-Z0-9_]+/);
+      return { error: 'RPC_' + code + '_' + (NAMES[code] || 'STATUS'), reason: why ? why[0] : null,
+               head: String(text).slice(0, 400),
                usedTemplate: !!cfg.template, sentUrl: url, sentInner: inner };
     }
     return { error: 'NO_MEDIA_URL', head: String(text).slice(0, 400), usedTemplate: !!cfg.template,
@@ -1693,6 +1702,107 @@ async function boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, grou
   return r;  // both refused: the problem is the data (refs/project), not the layout
 }
 
+// ─── Per-model daily quota ──────────────────────────────────────────────────
+// Flow caps image generations per model per day. When the chosen model is
+// spent, Google refuses the call (no credits used) with RESOURCE_EXHAUSTED +
+// PUBLIC_ERROR_PER_MODEL_DAILY_QUOTA_REACHED. The other image model has its
+// own cap, so fall over to it instead of failing the node, and remember the
+// spent model for a while so later calls go straight to the one that works.
+// Fallback order when the chosen model is out of quota: best quality first.
+// BELUGA = Nano Banana 2.1 (Flow's model catalog lists it as "beluga_display",
+// the same way NARWHAL shows as "narwhal_display"); HARBOR_SEAL = 2 Lite.
+const BOQ_IMAGE_MODEL_CHAIN = ['GEM_PIX_2', 'BELUGA', 'NARWHAL', 'HARBOR_SEAL'];
+const BOQ_KNOWN_IMAGE_TAGS = ['GEM_PIX_2', 'BELUGA', 'NARWHAL', 'HARBOR_SEAL'];
+const BOQ_MODEL_LABEL = { GEM_PIX_2: 'Nano Banana Pro', BELUGA: 'Nano Banana 2.1',
+                          NARWHAL: 'Nano Banana 2', HARBOR_SEAL: 'Nano Banana 2 Lite' };
+
+// Model tags the Flow app itself was seen sending (tag -> last seen ms). If
+// Google names a new model differently from what we assume, the first
+// image the user makes in the Flow tab with it teaches us the real tag.
+let boqSeenModelTags = {};
+chrome.storage.local.get(['boqSeenModelTags']).then((g) => {
+  if (g && g.boqSeenModelTags) boqSeenModelTags = g.boqSeenModelTags;
+}).catch(() => {});
+
+function boqNoteModelTag(inner) {
+  const found = [];
+  const walk = (n, depth) => {
+    if (!Array.isArray(n) || depth > 8) return;
+    // A generate item: [null, null, inputs, seed, aspect, MODEL, null, ctx, [[[prompt]]], …]
+    if (n.length > 8 && typeof n[5] === 'string' && /^[A-Z][A-Z0-9_]{2,40}$/.test(n[5])
+        && typeof n[3] === 'number') {
+      found.push(n[5]);
+      return;
+    }
+    for (let i = 0; i < n.length; i++) walk(n[i], depth + 1);
+  };
+  walk(inner, 0);
+  if (!found.length) return;
+  const now = Date.now();
+  let isNew = false;
+  for (const t of found) {
+    if (!boqSeenModelTags[t]) isNew = true;
+    boqSeenModelTags[t] = now;
+  }
+  chrome.storage.local.set({ boqSeenModelTags }).catch(() => {});
+  if (isNew) console.log('[Flowboard] Flow app uses image model tag(s):', found.join(', '));
+}
+
+/** The tag to actually send for a requested model. Only BELUGA (2.1) is an
+ *  inference; if the Flow app was never seen sending it but was seen sending
+ *  some other unfamiliar tag, that one is the new model. */
+function boqResolveModelTag(model) {
+  if (model !== 'BELUGA' || boqSeenModelTags.BELUGA) return model;
+  const unknown = Object.keys(boqSeenModelTags)
+    .filter((t) => BOQ_KNOWN_IMAGE_TAGS.indexOf(t) === -1)
+    .sort((a, b) => boqSeenModelTags[b] - boqSeenModelTags[a]);
+  return unknown[0] || model;
+}
+const BOQ_QUOTA_RECHECK_MS = 30 * 60 * 1000;  // retry a spent model after 30 min (refusals are free)
+const boqSpentModels = {};                    // model -> timestamp it was refused
+
+function boqIsQuota(r) {
+  if (!r || !r.error) return false;
+  if (r.reason && /QUOTA/.test(r.reason)) return true;
+  return r.error === 'RPC_8_RESOURCE_EXHAUSTED';
+}
+
+function boqModelLabel(m) { return BOQ_MODEL_LABEL[m] || m; }
+
+async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, groupId, job) {
+  const preferred = (job && job.model) || BOQ_IMAGE_MODEL_TAG;
+  const chain = [preferred].concat(BOQ_IMAGE_MODEL_CHAIN.filter((m) => m !== preferred));
+  const now = Date.now();
+  const fresh = chain.filter((m) => !(boqSpentModels[m] && now - boqSpentModels[m] < BOQ_QUOTA_RECHECK_MS));
+  // Everything recently spent: probe them all again anyway — a refusal costs nothing.
+  const order = fresh.length ? fresh : chain;
+  const refused = [];
+  let last = null;
+  for (const model of order) {
+    const r = await boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, groupId,
+                                          Object.assign({}, job, { model: boqResolveModelTag(model) }));
+    // A stand-in model this account can't use (rejected outright, no credits
+    // spent) — just move on to the next one.
+    if (model !== preferred && r && /^RPC_(3|5|7|9)_/.test(String(r.error)) && !boqIsQuota(r)) {
+      console.warn('[Flowboard] fallback model ' + boqModelLabel(model) + ' rejected (' + r.error + ') — skipping');
+      continue;
+    }
+    if (!boqIsQuota(r)) {
+      if (r && !r.error) {
+        delete boqSpentModels[model];
+        r.modelUsed = model;
+        if (model !== preferred) r.fallbackFrom = preferred;
+      }
+      return r;
+    }
+    last = r;
+    refused.push(model);
+    if (!r.reason || /DAILY/.test(r.reason)) boqSpentModels[model] = Date.now();
+    console.warn('[Flowboard] ' + boqModelLabel(model) + ' refused (' + (r.reason || r.error) + ') — trying next model');
+  }
+  return Object.assign({}, last, { error: 'QUOTA_DAILY', models: refused });
+}
+
 async function boqUploadOne(tabId, projectId, imageBase64, mimeType, fileName) {
   const [out] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -1865,7 +1975,7 @@ async function handleBatchGenerateImagesViaBoq(msg) {
         IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR: 4, IMAGE_ASPECT_RATIO_PORTRAIT_FOUR_THREE: 4,
         IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE: 5,
       };
-      const MODELS = ['GEM_PIX_2', 'NARWHAL', 'HARBOR_SEAL'];
+      const MODELS = BOQ_KNOWN_IMAGE_TAGS;
       const model = (it && MODELS.indexOf(it.imageModelName) !== -1) ? it.imageModelName : null;
       return {
         prompt, inputs,
@@ -1891,10 +2001,18 @@ async function handleBatchGenerateImagesViaBoq(msg) {
     // variants of a single "x4" press.
     const groupId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).toUpperCase();
     const results = await Promise.all(
-      jobs.map((j) => boqRunOneWithFallback(tab.id, projectId, j.prompt, j.inputs, groupId, j.job)),
+      jobs.map((j) => boqRunWithModelFallback(tab.id, projectId, j.prompt, j.inputs, groupId, j.job)),
     );
     const media = [];
+    let fallbackNote = null;
     for (const r of results) {
+      if (r && r.error === 'QUOTA_DAILY') {
+        // Not a payload problem: don't count it against the learned template.
+        const names = (r.models || []).map(boqModelLabel).join(' và ');
+        // Kept under the agent's 200-char error cut-off.
+        return fail(429, 'BOQ_QUOTA_DAILY — Tài khoản Flow đã hết lượt tạo ảnh hôm nay của '
+          + (names || 'model đã chọn') + '. Đợi Google mở lại hạn mức, hoặc đăng nhập Flow bằng tài khoản Google khác.');
+      }
       if (!r || r.error) {
         // `head` is the first slice of whatever Flow actually replied. Without
         // it a bare NO_MEDIA_URL / HTTP_400 is undiagnosable from the node.
@@ -1909,9 +2027,15 @@ async function handleBatchGenerateImagesViaBoq(msg) {
         return fail(502, 'BOQ_' + ((r && r.error) || 'UNKNOWN') + detail);
       }
       media.push({ name: r.mediaId, image: { generatedImage: { fifeUrl: r.url } } });
+      if (r.fallbackFrom && !fallbackNote) {
+        fallbackNote = boqModelLabel(r.fallbackFrom) + ' đã hết lượt hôm nay — ảnh này được tạo bằng '
+          + boqModelLabel(r.modelUsed);
+      }
     }
     // Shape mirrors the retired REST reply so flow_sdk parses it unchanged.
-    sendToAgent({ id, status: 200, data: { media } });
+    const data = { media };
+    if (fallbackNote) data.modelNotice = fallbackNote;
+    sendToAgent({ id, status: 200, data });
     boqMarkSuccess();
     // Cheap moment to fill the account panel: we already have a live tab.
     pushIdentityFromFlowTab(false);

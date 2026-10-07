@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useGenerationStore } from "../store/generation";
 import {
   useSettingsStore,
-  type ImageModelKey,
+  IMAGE_MODEL_OPTIONS,
   type VideoQuality,
 } from "../store/settings";
 
@@ -20,18 +20,7 @@ import {
  *     localStorage; every gen_image / edit_image dispatch reads it.
  */
 
-const IMAGE_MODELS: { key: ImageModelKey; label: string; hint: string }[] = [
-  {
-    key: "NANO_BANANA_PRO",
-    label: "Nano Banana Pro",
-    hint: "GEM_PIX_2 — premium, higher fidelity, slightly slower",
-  },
-  {
-    key: "NANO_BANANA_2",
-    label: "Nano Banana 2",
-    hint: "NARWHAL — faster, lighter checkpoint",
-  },
-];
+const IMAGE_MODELS = IMAGE_MODEL_OPTIONS;
 
 // Order: lite → fast → quality (paid), then the Ultra-only relaxed
 // variants (0-credit low-priority queue). Lite/Fast/Quality are

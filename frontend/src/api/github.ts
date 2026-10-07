@@ -7,8 +7,12 @@
  * what we already learned instead of burning quota.
  */
 
-const REPO = "crisng95/flowboard";
+// Richard's fork — updates for this app ship here, not upstream.
+const REPO = "quocbao1772003-spec/FLOW-BY-QB";
+export const REPO_URL = `https://github.com/${REPO}`;
 const RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const HEAD_URL = `https://api.github.com/repos/${REPO}/commits/main`;
+const HEAD_CACHE_KEY = "flowboard.github.mainHead.v1";
 const CACHE_KEY = "flowboard.github.latestRelease.v1";
 // 1 hour — long enough that idle tabs don't hammer the API, short
 // enough that a freshly-cut release shows up the same session.
@@ -91,4 +95,55 @@ export function isNewerVersion(latest: string, current: string): boolean {
     if (a[i] < b[i]) return false;
   }
   return false;
+}
+
+export interface RemoteHead {
+  sha: string;
+  date: string;    // ISO committer date
+  message: string; // first line
+}
+
+/** Newest commit on `main` of the fork (null when offline / private repo). */
+export async function getRemoteHead(): Promise<RemoteHead | null> {
+  try {
+    const raw = sessionStorage.getItem(HEAD_CACHE_KEY);
+    if (raw) {
+      const c = JSON.parse(raw);
+      if (typeof c?.fetchedAt === "number" && Date.now() - c.fetchedAt < CACHE_TTL_MS) {
+        return c.head as RemoteHead | null;
+      }
+    }
+  } catch {
+    /* ignore cache */
+  }
+  let head: RemoteHead | null = null;
+  try {
+    const res = await fetch(HEAD_URL, { headers: { Accept: "application/vnd.github+json" } });
+    if (res.ok) {
+      const body = await res.json();
+      head = {
+        sha: typeof body.sha === "string" ? body.sha : "",
+        date: typeof body?.commit?.committer?.date === "string" ? body.commit.committer.date : "",
+        message: typeof body?.commit?.message === "string" ? body.commit.message.split("\n")[0] : "",
+      };
+    }
+  } catch {
+    return null; // offline — don't cache, try again next mount
+  }
+  try {
+    sessionStorage.setItem(HEAD_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), head }));
+  } catch {
+    /* ignore */
+  }
+  return head;
+}
+
+/** True when GitHub's main is ahead of the commit this app was started from. */
+export function isRemoteNewer(head: RemoteHead | null, localSha: string, localDate: string): boolean {
+  if (!head?.sha || !localSha) return false;
+  if (head.sha === localSha) return false;
+  const remote = Date.parse(head.date);
+  const local = Date.parse(localDate);
+  if (Number.isNaN(remote) || Number.isNaN(local)) return true;
+  return remote > local;
 }

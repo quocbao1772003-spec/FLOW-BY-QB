@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { requestDownload } from "../store/download";
 import { useGenerationStore } from "../store/generation";
 import { useBoardStore } from "../store/board";
-import { useSettingsStore } from "../store/settings";
+import { useSettingsStore, IMAGE_MODEL_OPTIONS } from "../store/settings";
 import { getMediaStatus, mediaUrl, upscaleImage, type MediaStatus } from "../api/client";
 import { ImageEditModal } from "./ImageEditModal";
 import { countryLabel, vibeLabel } from "../constants/character";
@@ -18,10 +18,9 @@ import {
 // Friendly labels for the metadata grid's `model` row. Keys match what
 // the dispatch code stamps onto node.data — keep in sync with
 // `ImageModelKey` (store/settings.ts) and `VideoQuality` respectively.
-const IMAGE_MODEL_LABELS: Record<string, string> = {
-  NANO_BANANA_PRO: "Banana Pro",
-  NANO_BANANA_2: "Banana 2",
-};
+const IMAGE_MODEL_LABELS: Record<string, string> = Object.fromEntries(
+  IMAGE_MODEL_OPTIONS.map((m) => [m.key, m.label.replace("Nano ", "")]),
+);
 const VIDEO_QUALITY_LABELS: Record<string, string> = {
   lite: "Lite",
   fast: "Fast",

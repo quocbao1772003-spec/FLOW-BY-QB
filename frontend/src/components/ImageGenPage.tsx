@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../store/board";
 import { useGenerationStore } from "../store/generation";
+import { useSettingsStore, IMAGE_MODEL_OPTIONS, type ImageModelKey } from "../store/settings";
 import { mediaUrl, uploadImage } from "../api/client";
 import { IconArrowUp, IconImage, IconPlus, IconSpinner } from "../canvas/icons";
 import {
@@ -30,6 +31,8 @@ export function ImageGenPage() {
   const createNewBoard = useBoardStore((s) => s.createNewBoard);
   const addNodeOfType = useBoardStore((s) => s.addNodeOfType);
   const dispatchGeneration = useGenerationStore((s) => s.dispatchGeneration);
+  const imageModel = useSettingsStore((s) => s.imageModel);
+  const setImageModel = useSettingsStore((s) => s.setImageModel);
   const openResultViewer = useGenerationStore((s) => s.openResultViewer);
 
   const addReferenceNode = useBoardStore((s) => s.addReferenceNode);
@@ -173,7 +176,18 @@ export function ImageGenPage() {
         </h2>
 
         <span className="imagegen-form__label">MODEL</span>
-        <div className="imagegen-form__model">GemPix 2</div>
+        <select
+          className="imagegen-form__model"
+          value={imageModel}
+          onChange={(e) => setImageModel(e.target.value as ImageModelKey)}
+          aria-label="Image model"
+        >
+          {IMAGE_MODEL_OPTIONS.map((m) => (
+            <option key={m.key} value={m.key}>
+              {m.label}
+            </option>
+          ))}
+        </select>
 
         <span className="imagegen-form__label">
           REFERENCES <span style={{ marginLeft: "auto" }}>{refs.length}/4</span>

@@ -6,7 +6,15 @@ import {
   type AuthMe,
 } from "../api/client";
 import { useGenerationStore } from "../store/generation";
-import { getLatestRelease, isNewerVersion, type LatestRelease } from "../api/github";
+import {
+  REPO_URL,
+  getLatestRelease,
+  getRemoteHead,
+  isNewerVersion,
+  isRemoteNewer,
+  type LatestRelease,
+  type RemoteHead,
+} from "../api/github";
 import { SettingsPanel } from "./SettingsPanel";
 import packageJson from "../../package.json";
 
@@ -145,6 +153,19 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
   const updateAvailable =
     !!latestRelease?.tagName &&
     isNewerVersion(latestRelease.tagName, APP_VERSION);
+  // The fork ships as plain commits on main (no releases), so also compare
+  // the commit this app is running with the newest one on GitHub.
+  const [remoteHead, setRemoteHead] = useState<RemoteHead | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getRemoteHead().then((h) => {
+      if (alive) setRemoteHead(h);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const commitBehind = !updateAvailable && isRemoteNewer(remoteHead, __APP_COMMIT__, __APP_COMMIT_DATE__);
 
   const tier = profile?.paygate_tier ?? null;
 
@@ -293,9 +314,15 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
       </div>
       {!collapsed && (
         <div className="account-panel__version-row">
-          <span className="account-panel__version-label">
+          <a
+            className="account-panel__version-label account-panel__version-link"
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Mở GitHub FLOW-BY-QB${__APP_COMMIT__ ? ` — đang chạy commit ${__APP_COMMIT__.slice(0, 7)}` : ""}`}
+          >
             Flowboard <code>v{APP_VERSION}</code>
-          </span>
+          </a>
           {updateAvailable && latestRelease && (
             <a
               className="account-panel__update-pill"
@@ -305,6 +332,17 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
               title={`Latest release ${latestRelease.tagName} — click to view`}
             >
               ↑ {latestRelease.tagName}
+            </a>
+          )}
+          {commitBehind && remoteHead && (
+            <a
+              className="account-panel__update-pill"
+              href={`${REPO_URL}/commits/main`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`GitHub có bản mới: ${remoteHead.message} — chạy "git fetch origin" rồi "git reset --hard origin/main" để cập nhật`}
+            >
+              ↑ Cập nhật
             </a>
           )}
         </div>

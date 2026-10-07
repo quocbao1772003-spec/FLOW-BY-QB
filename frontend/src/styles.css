@@ -2002,6 +2002,9 @@ button:disabled {
 }
 
 .imagegen-form__model {
+  width: 100%;
+  font-family: inherit;
+  cursor: pointer;
   padding: 8px 12px;
   border-radius: var(--radius-base);
   background: rgba(255, 255, 255, 0.06);

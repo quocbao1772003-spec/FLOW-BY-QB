@@ -170,6 +170,8 @@ def test_resolve_image_model_helper_accepts_known_keys_only():
 
     assert resolve_image_model("NANO_BANANA_PRO") == "GEM_PIX_2"
     assert resolve_image_model("NANO_BANANA_2") == "NARWHAL"
+    assert resolve_image_model("NANO_BANANA_2_1") == "BELUGA"
+    assert resolve_image_model("NANO_BANANA_2_LITE") == "HARBOR_SEAL"
     # Anything else falls back to Pro — defense-in-depth.
     assert resolve_image_model("UNKNOWN") == "GEM_PIX_2"
     assert resolve_image_model("") == "GEM_PIX_2"

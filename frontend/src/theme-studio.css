@@ -696,7 +696,20 @@ select {
   color: var(--fg-3);
 }
 
+a.account-panel__version-link {
+  text-decoration: none;
+  border-radius: 6px;
+  transition: color 0.15s ease;
+}
+
+a.account-panel__version-link:hover,
+a.account-panel__version-link:hover code {
+  color: var(--accent-soft);
+}
+
 .account-panel__update-pill {
+  white-space: nowrap;
+  flex-shrink: 0;
   background: rgba(var(--accent-rgb), 0.14);
   color: var(--accent-soft);
   border: 1px solid rgba(var(--accent-rgb), 0.35);

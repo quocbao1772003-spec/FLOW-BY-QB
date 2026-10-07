@@ -87,7 +87,12 @@ def _media_get_url(media_id: str) -> str:
 # + edit_image at request time. Update when Google rotates model names.
 IMAGE_MODELS: dict[str, str] = {
     "NANO_BANANA_PRO": "GEM_PIX_2",
+    # Nano Banana 2.1 (Oct 2026). Flow's model catalog lists it as
+    # "beluga_display" (cf. "narwhal_display" for NARWHAL); the extension
+    # also learns the real tag from the Flow tab if this one is ever wrong.
+    "NANO_BANANA_2_1": "BELUGA",
     "NANO_BANANA_2": "NARWHAL",
+    "NANO_BANANA_2_LITE": "HARBOR_SEAL",
 }
 DEFAULT_IMAGE_MODEL_KEY = "NANO_BANANA_PRO"
 

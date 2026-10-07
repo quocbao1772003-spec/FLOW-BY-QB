@@ -6,6 +6,8 @@ import { useGenerationStore } from "../store/generation";
 import {
   useSettingsStore,
   OMNI_FLASH_DURATIONS,
+  IMAGE_MODEL_OPTIONS,
+  type ImageModelKey,
   type OmniFlashDuration,
 } from "../store/settings";
 import { enhancePrompt, mediaUrl, patchEdge, patchNode, uploadImage, uploadImageFromUrl } from "../api/client";
@@ -1867,14 +1869,6 @@ function downloadExt(type: string): string {
   return "png";
 }
 
-/* Footer chip labels — mirror Magnific's "Google Nano Ban… / 1:1" chips.
-   Model label is informational (which Flow model serves this type);
-   aspect label maps Flow's enum onto the familiar ratio shorthand. */
-function modelLabel(type: string): string {
-  if (type === "video") return "Veo 3.1";
-  return "GemPix 2";
-}
-
 export function NodeCard(props: NodeProps<FlowNode>) {
   const data = props.data;
   // Floating Magnific-style toolbar + Image Editor state.
@@ -1957,6 +1951,8 @@ export function NodeCard(props: NodeProps<FlowNode>) {
   const videoQuality = useSettingsStore((s) => s.videoQuality);
   const setVideoModel = useSettingsStore((s) => s.setVideoModel);
   const setVideoQuality = useSettingsStore((s) => s.setVideoQuality);
+  const imageModel = useSettingsStore((s) => s.imageModel);
+  const setImageModel = useSettingsStore((s) => s.setImageModel);
   const [mentions, setMentions] = useState<{
     connected: MentionNode[];
     disconnected: MentionNode[];
@@ -2480,13 +2476,20 @@ export function NodeCard(props: NodeProps<FlowNode>) {
             ) : (
               <select
                 className="node-chip node-chip--select nodrag"
-                value={modelLabel(data.type)}
-                onChange={() => {}}
+                value={imageModel}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  setImageModel(e.target.value as ImageModelKey);
+                }}
                 onClick={(e) => e.stopPropagation()}
-                title="Flow model serving this node type"
-                aria-label="Model"
+                title="Model tạo ảnh — áp dụng cho các lần tạo ảnh tiếp theo (giống mục Cài đặt)"
+                aria-label="Image model"
               >
-                <option value={modelLabel(data.type)}>{modelLabel(data.type)}</option>
+                {IMAGE_MODEL_OPTIONS.map((m) => (
+                  <option key={m.key} value={m.key} title={m.hint}>
+                    {m.short}
+                  </option>
+                ))}
               </select>
             )}
             <select
