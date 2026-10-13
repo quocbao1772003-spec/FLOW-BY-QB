@@ -433,6 +433,15 @@ class FlowSDK:
         if isinstance(resp, dict) and resp.get("error"):
             return {"raw": resp, "error": resp["error"]}
 
+        # TRPC errors are nested under data.error.json. Preserve the real
+        # authorization failure instead of pretending a successful reply lacks an ID.
+        data = resp.get("data") if isinstance(resp, dict) else None
+        err = data.get("error") if isinstance(data, dict) else None
+        if isinstance(err, dict):
+            detail = err.get("json") if isinstance(err.get("json"), dict) else err
+            return {"raw": resp, "error": str(detail.get("message") or "PROJECT_CREATE_FAILED")}
+        if isinstance(resp, dict) and isinstance(resp.get("status"), int) and resp["status"] >= 400:
+            return {"raw": resp, "error": f"PROJECT_CREATE_HTTP_{resp['status']}"}
         project_id = _extract_project_id(resp)
         out: dict[str, Any] = {"raw": resp}
         if project_id is None:

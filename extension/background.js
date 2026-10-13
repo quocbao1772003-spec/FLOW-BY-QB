@@ -13,6 +13,20 @@ let flowKey          = null;
 let callbackSecret   = null; // Auth secret received from agent on WS connect
 let state            = 'off'; // off | idle | running
 let manualDisconnect = false;
+let reconnectAttempts = 0;
+let reconnectAt = 0;
+let bridgeInstanceId = null;
+let bridgeAccepted = false;
+let bridgeInstancePromise = null;
+function getBridgeInstanceId() {
+  if (!bridgeInstancePromise) bridgeInstancePromise = (async () => {
+    const data = await chrome.storage.local.get('bridgeInstanceId');
+    bridgeInstanceId = data.bridgeInstanceId || crypto.randomUUID();
+    await chrome.storage.local.set({ bridgeInstanceId });
+    return bridgeInstanceId;
+  })().catch(error => { bridgeInstancePromise = null; throw error; });
+  return bridgeInstancePromise;
+}
 let metrics = {
   tokenCapturedAt: null,
   requestCount:    0,
@@ -80,10 +94,10 @@ async function init() {
   // extensions on the profile that hold the `storage` permission.
   // The agent replays user_info on every WS reconnect anyway via
   // fetchAndPushUserInfo(token), so persistence buys nothing.
-  const data = await chrome.storage.local.get(['flowKey', 'metrics', 'callbackSecret']);
+  const data = await chrome.storage.local.get(['flowKey', 'metrics']);
+  await getBridgeInstanceId();
   if (data.flowKey)        flowKey        = data.flowKey;
   if (data.metrics)        Object.assign(metrics, data.metrics);
-  if (data.callbackSecret) callbackSecret = data.callbackSecret;
   connectToAgent();
   chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 });
 }
@@ -160,23 +174,51 @@ async function fetchAndPushUserInfo(token) {
 
 // ─── WebSocket to Agent ─────────────────────────────────────
 
-function connectToAgent() {
+function connectToAgent(force = false) {
   if (manualDisconnect) return;
+  if (!force && Date.now() < reconnectAt) return;
   if (ws?.readyState === WebSocket.CONNECTING) return;
   if (ws?.readyState === WebSocket.OPEN) return;
 
   try {
     ws = new WebSocket(AGENT_WS_URL);
   } catch (e) {
-    console.error('[Flowboard] WS connect error:', e);
+    metrics.lastError = 'Không kết nối được app local. Hãy mở MO-APP.bat (cổng 9223).';
+    setState('off');
     scheduleReconnect();
     return;
   }
 
-  ws.onopen = () => {
-    console.log('[Flowboard] Connected to agent');
+  ws.onopen = async () => {
+    // The agent must choose this profile before receiving identity or jobs.
+    bridgeAccepted = false;
+    callbackSecret = null;
+    const socket = ws;
+    try {
+      // A suspended MV3 worker may wake on an alarm, without onStartup/init.
+      const instanceId = await getBridgeInstanceId();
+      if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ type: 'bridge_hello', protocol: 2,
+        instanceId, version: chrome.runtime.getManifest().version }));
+    } catch (error) {
+      metrics.lastError = 'Không đọc được mã profile extension. Hãy reload extension.';
+      socket.close();
+    }
+    setState('off');
+  };
+
+  const announceAcceptedProfile = async () => {
+    console.log('[Flowboard] Profile accepted by agent');
+    reconnectAttempts = 0;
+    reconnectAt = 0;
+    if (metrics.lastError === 'WS_ERROR' || metrics.lastError?.includes('app local')) {
+      metrics.lastError = null;
+      chrome.storage.local.set({ metrics });
+    }
     chrome.alarms.clear('reconnect');
     setState('idle');
+    await pushIdentityFromFlowTab(true);
+    if (ws?.readyState !== WebSocket.OPEN) return;
 
     const tokenAge = flowKey && metrics.tokenCapturedAt
       ? Date.now() - metrics.tokenCapturedAt
@@ -206,10 +248,20 @@ function connectToAgent() {
     try {
       const msg = JSON.parse(data);
 
-      if (msg.type === 'callback_secret') {
+      if (msg.type === 'bridge_rejected') {
+        bridgeAccepted = false;
+        callbackSecret = null;
+        metrics.lastError = msg.error === 'ANOTHER_PROFILE_SELECTED'
+          ? 'App đang dùng profile Chrome khác. Muốn đổi profile: Disconnect profile cũ, khởi động lại agent rồi Reconnect ở đây.'
+          : 'Cần cập nhật Flowboard Bridge trong profile Chrome này lên bản mới.';
+        chrome.storage.local.set({ metrics });
+        setState('off');
+      } else if (msg.type === 'callback_secret') {
         callbackSecret = msg.secret;
-        chrome.storage.local.set({ callbackSecret: msg.secret });
+        bridgeAccepted = true;
+        metrics.lastError = null;
         console.log('[Flowboard] Received callback secret');
+        await announceAcceptedProfile();
       } else if (msg.type === 'pong') {
         // keepalive response — no-op
       } else if (msg.type === 'logout') {
@@ -222,6 +274,7 @@ function connectToAgent() {
         cachedUserInfo = null;
         flowKey = null;
       } else if (msg.type === 'please_resend_userinfo') {
+        if (await pushIdentityFromFlowTab(true)) return;
         // No Bearer token means the userinfo endpoint is unreachable; the Flow
         // page still knows who is signed in.
         if (!flowKey) { pushIdentityFromFlowTab(true); return; }
@@ -260,19 +313,26 @@ function connectToAgent() {
   };
 
   ws.onclose = () => {
+    bridgeAccepted = false;
+    callbackSecret = null;
     setState('off');
     if (!manualDisconnect) scheduleReconnect();
   };
 
-  ws.onerror = (e) => {
-    console.error('[Flowboard] WS error:', e);
-    metrics.lastError = 'WS_ERROR';
+  ws.onerror = () => {
+    // Chrome reports the transport failure itself; don't duplicate it with
+    // an opaque Event object in the extension error list.
+    metrics.lastError = 'Không kết nối được app local. Hãy mở MO-APP.bat (cổng 9223).';
     chrome.storage.local.set({ metrics });
+    setState('off');
   };
 }
 
 function scheduleReconnect() {
-  chrome.alarms.create('reconnect', { delayInMinutes: 0.083 }); // ~5 s
+  if (manualDisconnect) return;
+  const delayMs = Math.min(30000 * 2 ** Math.min(reconnectAttempts++, 3), 240000);
+  reconnectAt = Date.now() + delayMs;
+  chrome.alarms.create('reconnect', { when: reconnectAt });
 }
 
 function keepAlive() {
@@ -291,6 +351,7 @@ function keepAlive() {
  * Falls back to WS on HTTP failure. Non-response messages use WS directly.
  */
 function sendToAgent(msg) {
+  if (!bridgeAccepted) return;
   if (msg.id) {
     fetch(CALLBACK_URL, {
       method:  'POST',
@@ -962,6 +1023,8 @@ function boqOnSample(sample) {
   const sourcePath = url.searchParams.get('source-path') || '';
   const freq = body.get('f.req');
   if (!rpcId || !freq) return;
+  // A CDN URL in a listing/upload response is not a generation sample.
+  if (rpcId !== BOQ_RPC_IMAGE) return;
 
   if (rpcId === BOQ_RPC_IMAGE) {
     try { boqNoteModelTag(JSON.parse(JSON.parse(freq)[0][0][1])); } catch (e) { /* not ours to read */ }
@@ -1009,6 +1072,11 @@ function boqOnSample(sample) {
     return;
   }
 
+  // A reference-capable template also supports text-only requests. Keep it
+  // when another text-only capture from the same build arrives.
+  if (boqTemplate && boqTemplate.bl === learned.template.bl
+      && boqTemplate.rpcId === learned.template.rpcId
+      && boqTemplate.paths.inputs && !learned.template.paths.inputs) return;
   boqTemplate = learned.template;
   boqHealth = { failures: 0, stale: false, reason: null, lastLearnError: null };
   boqSaveTemplate();
@@ -1023,10 +1091,10 @@ function boqOnSample(sample) {
 
 function boqRedact(x) {
   if (typeof x === 'string') {
-    if (x.length > 500) return '<LONG_' + x.length + '>';
     if (x.length > 2 && (x[0] === '[' || x[0] === '{')) {
       try { return { __json: boqRedact(JSON.parse(x)) }; } catch (e) { /* plain */ }
     }
+    if (x.length > 500) return '<LONG_' + x.length + '>';
     return x;
   }
   if (Array.isArray(x)) return x.map(boqRedact);
@@ -1046,6 +1114,9 @@ function boqForwardTrace(kind, t) {
     sourcePath = u.searchParams.get('source-path');
     bl = u.searchParams.get('bl');
   } catch (e) { /* ignore */ }
+  // Keep the bounded log for mutations, not the many library/polling RPCs
+  // that previously evicted the successful manual comparison in seconds.
+  if (!String(rpcids || '').split(',').some(r => ['ogiZ0b', 'maseQ', 'jHPbke', 'SPrCad'].includes(r))) return;
   try {
     const f = t.body ? new URLSearchParams(t.body).get('f.req') : null;
     freq = f ? boqRedact(JSON.parse(f)) : (t.inner ? boqRedact(t.inner) : null);
@@ -1055,6 +1126,7 @@ function boqForwardTrace(kind, t) {
     kind, time: new Date().toISOString(), rpcids, sourcePath, bl,
     status: t.status == null ? null : t.status, hasMedia: !!t.hasMedia,
     error: t.error || null, freq, head: head.slice(0, 3000),
+    context: t.context ? boqRedact(t.context) : null,
   };
   if (ws && ws.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify({ type: 'boq_trace', trace: out })); } catch (e) { /* closing */ }
@@ -1072,17 +1144,25 @@ function boqForwardTrace(kind, t) {
 // Pro/Ultra label all came from endpoints that are gone.
 
 let _identityPushed = false;
+let boqAccountSession = null;
+let boqSelectedTabId = null;
+
+function boqChooseTab(tabs) {
+  const live = tabs.filter(t => !t.discarded);
+  return live.find(t => t.active) || live.find(t => t.id === boqSelectedTabId)
+    || live.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0]
+    || tabs[0] || null;
+}
 
 /** An existing Flow project tab, or null. Deliberately does NOT open one:
  *  spawning a tab to fill in a label would be rude. */
 async function boqExistingProjectTab() {
   const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/project/*' });
-  return tabs.find((t) => !t.discarded) || tabs[0] || null;
+  return boqChooseTab(tabs);
 }
 
-async function pushIdentityFromFlowTab(force) {
-  if (_identityPushed && !force) return false;
-  const tab = await boqExistingProjectTab();
+async function pushIdentityFromFlowTab(force, tabId) {
+  const tab = tabId == null ? await boqExistingProjectTab() : { id: tabId };
   if (!tab || tab.id == null) return false;
   try {
     const [out] = await chrome.scripting.executeScript({
@@ -1090,11 +1170,22 @@ async function pushIdentityFromFlowTab(force) {
       world: 'MAIN',
       func: () => {
         const W = window.WIZ_global_data || {};
-        return typeof W.oPEP7c === 'string' ? W.oPEP7c : null;
+        return { email: typeof W.oPEP7c === 'string' ? W.oPEP7c : null,
+          session: String(W.FdrFJe || '') };
       },
     });
-    const email = out && out.result;
+    const identity = out && out.result;
+    const email = identity && identity.email;
     if (!email) return false;
+    const accountSession = email.toLowerCase() + ':' + identity.session;
+    if (boqAccountSession !== accountSession) {
+      for (const model of Object.keys(boqSpentModels)) delete boqSpentModels[model];
+      // A stored legacy Bearer token may belong to the previous account.
+      flowKey = null;
+      chrome.storage.local.remove('flowKey');
+      boqAccountSession = accountSession;
+    }
+    boqSelectedTabId = tab.id;
     cachedUserInfo = { email, verified_email: true };
     _identityPushed = true;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1165,6 +1256,19 @@ async function boqGenerateInPage(cfg) {
     return { error: 'GRECAPTCHA_MISSING' };
   }
 
+  // Record which API is installed; the document-start compatibility module
+  // owns initialization, and the shared bridge serializes token minting.
+  const captchaApiHasRejectionMarker = Function.prototype.toString.call(window.grecaptcha.enterprise.execute)
+    .includes('extension_hijack_detected');
+  const traceContext = {
+    path: window.location ? window.location.pathname : null,
+    visibility: typeof document !== 'undefined' ? document.visibilityState : null,
+    captchaApiHasRejectionMarker,
+    siteKeySource: W.xZbWve ? 'page' : 'extension',
+    action: 'IMAGE_GENERATION',
+    captchaApi: window.__flowboardCaptchaApi?.status() || null,
+  };
+
   const uuid = () => (window.crypto && window.crypto.randomUUID
     ? window.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -1174,9 +1278,11 @@ async function boqGenerateInPage(cfg) {
 
   let token;
   try {
-    token = await window.grecaptcha.enterprise.execute(W.xZbWve || cfg.siteKey, { action: 'IMAGE_GENERATION' });
+    if (typeof window.__flowboardMintCaptcha !== 'function') return { error: 'CAPTCHA_BRIDGE_RELOAD_REQUIRED' };
+    token = await window.__flowboardMintCaptcha('IMAGE_GENERATION', W.xZbWve || cfg.siteKey);
   } catch (e) {
-    return { error: 'CAPTCHA_' + ((e && e.message) || 'FAILED') };
+    const error = (e && e.message) || 'FAILED';
+    return { error: error.startsWith('CAPTCHA_') ? error : 'CAPTCHA_' + error, traceContext };
   }
   if (!token) return { error: 'CAPTCHA_EMPTY' };
 
@@ -1220,12 +1326,29 @@ async function boqGenerateInPage(cfg) {
     for (const p of P.project) setAt(inner, p, cfg.projectId);
     for (const p of P.token) setAt(inner, p, token);
     setAt(inner, P.seed, cfg.seed);
+    // The observed request item stores seed, aspect and model consecutively.
+    // Resolve relative to the learned seed path so inserted slots stay supported.
+    const itemPath = P.seed.slice(0, -1);
+    const seedIndex = P.seed[P.seed.length - 1];
+    let item = inner;
+    for (const index of itemPath) item = item && item[index];
+    if (Array.isArray(item) && typeof item[seedIndex + 2] === 'string'
+        && /^[A-Z][A-Z0-9_]{2,40}$/.test(item[seedIndex + 2])) {
+      item[seedIndex + 2] = cfg.modelTag;
+      if (typeof item[seedIndex + 1] === 'number') item[seedIndex + 1] = cfg.aspect || 1;
+    }
     for (const p of P.group) setAt(inner, p, cfg.groupId || uuid());
     for (const p of P.uuids) setAt(inner, p, uuid());
     if (P.inputs) {
       const ids = cfg.mediaInputs || [];
       setAt(inner, P.inputs, ids.length
-        ? ids.map((id) => { const e = clone(P.inputEntry); e[P.inputIdIndex] = id; return e; })
+        ? ids.map((id, index) => {
+          const e = clone(P.inputEntry);
+          e[P.inputIdIndex] = id;
+          // The captured sample's role belongs to that sample, not this edit.
+          if (e.length === 5 && P.inputIdIndex === 0) e[4] = types[index] === 2 ? 2 : 1;
+          return e;
+        })
         : null);
     }
   } else {
@@ -1356,14 +1479,16 @@ async function boqGenerateInPage(cfg) {
       const why = String(text).match(/PUBLIC_ERROR_[A-Z0-9_]+/);
       return { error: 'RPC_' + code + '_' + (NAMES[code] || 'STATUS'), reason: why ? why[0] : null,
                head: String(text).slice(0, 400),
-               usedTemplate: !!cfg.template, sentUrl: url, sentInner: inner };
+               usedTemplate: !!cfg.template, sentUrl: url, sentInner: inner,
+               httpStatus: res.status, traceContext };
     }
     return { error: 'NO_MEDIA_URL', head: String(text).slice(0, 400), usedTemplate: !!cfg.template,
-             sentUrl: url, sentInner: inner };
+             sentUrl: url, sentInner: inner, httpStatus: res.status, traceContext };
   }
   const m = mediaUrl.match(/\/image\/([0-9a-fA-F-]{36})/);
   if (!m) return { error: 'NO_MEDIA_ID', head: mediaUrl.slice(0, 200) };
-  return { mediaId: m[1], url: mediaUrl };
+  return { mediaId: m[1], url: mediaUrl, usedTemplate: !!cfg.template,
+    sentUrl: url, sentInner: inner, httpStatus: res.status, traceContext };
 }
 
 /**
@@ -1396,9 +1521,12 @@ async function boqUploadInPage(cfg) {
   for (let a = 0; a < cfg.actions.length; a++) {
     let token;
     try {
-      token = await window.grecaptcha.enterprise.execute(W.xZbWve || cfg.siteKey, { action: cfg.actions[a] });
+      if (typeof window.__flowboardMintCaptcha !== 'function') return { error: 'CAPTCHA_BRIDGE_RELOAD_REQUIRED' };
+      token = await window.__flowboardMintCaptcha(cfg.actions[a], W.xZbWve || cfg.siteKey);
     } catch (e) {
-      lastError = 'CAPTCHA_' + ((e && e.message) || 'FAILED');
+      const error = (e && e.message) || 'FAILED';
+      lastError = error.startsWith('CAPTCHA_') ? error : 'CAPTCHA_' + error;
+      if (lastError.endsWith('_RELOAD_REQUIRED')) return { error: lastError };
       continue;
     }
     if (!token) { lastError = 'CAPTCHA_EMPTY'; continue; }
@@ -1509,9 +1637,12 @@ async function boqUpscaleInPage(cfg) {
   for (let a = 0; a < cfg.actions.length; a++) {
     let token;
     try {
-      token = await window.grecaptcha.enterprise.execute(W.xZbWve || cfg.siteKey, { action: cfg.actions[a] });
+      if (typeof window.__flowboardMintCaptcha !== 'function') return { error: 'CAPTCHA_BRIDGE_RELOAD_REQUIRED' };
+      token = await window.__flowboardMintCaptcha(cfg.actions[a], W.xZbWve || cfg.siteKey);
     } catch (e) {
-      lastError = 'CAPTCHA_' + ((e && e.message) || 'FAILED');
+      const error = (e && e.message) || 'FAILED';
+      lastError = error.startsWith('CAPTCHA_') ? error : 'CAPTCHA_' + error;
+      if (lastError.endsWith('_RELOAD_REQUIRED')) return { error: lastError };
       continue;
     }
     if (!token) { lastError = 'CAPTCHA_EMPTY'; continue; }
@@ -1604,14 +1735,20 @@ async function boqUpscaleInPage(cfg) {
  *  root and /about are a different boq app and would send a wrong `bl`. */
 async function boqFindProjectTab(projectId) {
   const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/project/*' });
-  const existing = tabs.find((t) => !t.discarded) || tabs[0] || null;
+  const projectUrl = 'https://flow.google.com/project/' + encodeURIComponent(projectId);
+  // Never mix another project's page/session context with this request.
+  const matching = tabs.filter(t => {
+    try { return new URL(t.url).pathname === new URL(projectUrl).pathname; }
+    catch (e) { return false; }
+  });
+  const existing = boqChooseTab(matching);
   if (existing) {
     const live = await reviveTabIfNeeded(existing);
     if (live) return live;
   }
   try {
     return await chrome.tabs.create({
-      url: 'https://flow.google.com/project/' + encodeURIComponent(projectId),
+      url: projectUrl,
       active: false,
     });
   } catch (e) {
@@ -1641,10 +1778,33 @@ async function boqWaitForApp(tabId, timeoutMs = 45000) {
   return false;
 }
 
+async function boqCheckProjectPage(tabId, projectId) {
+  const [out] = await chrome.scripting.executeScript({
+    target: { tabId }, world: 'MAIN',
+    func: () => window.location.pathname,
+  });
+  const path = out && out.result;
+  if (path === '/404' || path === '/404/') return 'BOQ_PROJECT_UNAVAILABLE — Project Flow không tồn tại hoặc tài khoản hiện tại không có quyền. Mở menu ⋯ của board → Rebind để liên kết project mới.';
+  if (path !== '/project/' + encodeURIComponent(projectId)) return 'BOQ_PROJECT_PAGE_MISMATCH — Tab Flow chưa mở đúng project. Kiểm tra đăng nhập và liên kết project của board.';
+  return null;
+}
+
+// Serialize the actual page calls, including calls from separate board nodes.
+// Each call mints a single-use captcha; injected.js's event queue is not used here.
+let boqGenerationTail = Promise.resolve();
 async function boqRunOne(tabId, projectId, prompt, mediaInputs, groupId, opts) {
+  const pending = boqGenerationTail.catch(() => {}).then(() =>
+    boqRunOneNow(tabId, projectId, prompt, mediaInputs, groupId, opts));
+  boqGenerationTail = pending.catch(() => {});
+  return pending;
+}
+
+async function boqRunOneNow(tabId, projectId, prompt, mediaInputs, groupId, opts) {
   opts = opts || {};
   const job = opts.job || {};
-  const tpl = opts.noTemplate ? null : boqTemplate;
+  const needsRefs = Array.isArray(mediaInputs) && mediaInputs.length > 0;
+  const tpl = opts.noTemplate || (needsRefs && boqTemplate && !boqTemplate.paths.inputs)
+    ? null : boqTemplate;
   const [out] = await chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
@@ -1675,10 +1835,11 @@ async function boqRunOne(tabId, projectId, prompt, mediaInputs, groupId, opts) {
  *  template was mislearned, so drop it; the next manual generate in the Flow
  *  tab will teach a fresh one. */
 function boqTraceOurs(r) {
-  if (r && r.error && r.sentInner) {
+  if (r && r.sentInner) {
     try {
       boqForwardTrace(r.usedTemplate ? 'ours-template' : 'ours-builtin',
-        { url: r.sentUrl, inner: [[[null, JSON.stringify(r.sentInner)]]], head: r.head, error: r.error });
+        { url: r.sentUrl, inner: [[['ogiZ0b', JSON.stringify(r.sentInner), null, 'generic']]],
+          head: r.head, error: r.error, status: r.httpStatus, hasMedia: !!r.mediaId, context: r.traceContext });
     } catch (e) { /* ignore */ }
   }
   return r;
@@ -1699,7 +1860,9 @@ async function boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, grou
     boqSaveTemplate();
     return r2;
   }
-  return r;  // both refused: the problem is the data (refs/project), not the layout
+  // Report the request actually sent last. In particular, don't hide a
+  // security/quota refusal behind a template compatibility error.
+  return r2;
 }
 
 // ─── Per-model daily quota ──────────────────────────────────────────────────
@@ -1770,6 +1933,10 @@ function boqIsQuota(r) {
 function boqModelLabel(m) { return BOQ_MODEL_LABEL[m] || m; }
 
 async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, groupId, job) {
+  // Refresh before consulting quota, including after an account switch.
+  if (!(await pushIdentityFromFlowTab(true, tabId))) {
+    return { error: 'ACCOUNT_NOT_DETECTED', head: 'Mở tab project Flow đã đăng nhập rồi bấm Scan extension.' };
+  }
   const preferred = (job && job.model) || BOQ_IMAGE_MODEL_TAG;
   const chain = [preferred].concat(BOQ_IMAGE_MODEL_CHAIN.filter((m) => m !== preferred));
   const now = Date.now();
@@ -1781,6 +1948,7 @@ async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, gr
   for (const model of order) {
     const r = await boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, groupId,
                                           Object.assign({}, job, { model: boqResolveModelTag(model) }));
+    if (r && r.reason === 'PUBLIC_ERROR_UNUSUAL_ACTIVITY') return r;
     // A stand-in model this account can't use (rejected outright, no credits
     // spent) — just move on to the next one.
     if (model !== preferred && r && /^RPC_(3|5|7|9)_/.test(String(r.error)) && !boqIsQuota(r)) {
@@ -1846,6 +2014,8 @@ async function handleUploadImageViaBoq(msg) {
   const tab = await boqFindProjectTab(projectId);
   if (!tab || tab.id == null) return fail(503, 'BOQ_NO_FLOW_TAB');
   if (!(await boqWaitForApp(tab.id))) return fail(503, 'BOQ_APP_NOT_READY');
+  const projectError = await boqCheckProjectPage(tab.id, projectId);
+  if (projectError) return fail(404, projectError);
 
   try {
     const r = await boqUploadOne(
@@ -1900,6 +2070,8 @@ async function handleUpsampleImageViaBoq(msg) {
   const tab = await boqFindProjectTab(projectId);
   if (!tab || tab.id == null) return fail(503, 'BOQ_NO_FLOW_TAB');
   if (!(await boqWaitForApp(tab.id))) return fail(503, 'BOQ_APP_NOT_READY');
+  const projectError = await boqCheckProjectPage(tab.id, projectId);
+  if (projectError) return fail(404, projectError);
 
   try {
     const [out] = await chrome.scripting.executeScript({
@@ -1993,6 +2165,8 @@ async function handleBatchGenerateImagesViaBoq(msg) {
   const tab = await boqFindProjectTab(projectId);
   if (!tab || tab.id == null) return fail(503, 'BOQ_NO_FLOW_TAB');
   if (!(await boqWaitForApp(tab.id))) return fail(503, 'BOQ_APP_NOT_READY');
+  const projectError = await boqCheckProjectPage(tab.id, projectId);
+  if (projectError) return fail(404, projectError);
 
   try {
     // One boq call per variant — the app itself sends a single item per
@@ -2000,12 +2174,19 @@ async function handleBatchGenerateImagesViaBoq(msg) {
     // One batch id for the whole dispatch — mirrors how the app groups the
     // variants of a single "x4" press.
     const groupId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).toUpperCase();
-    const results = await Promise.all(
-      jobs.map((j) => boqRunWithModelFallback(tab.id, projectId, j.prompt, j.inputs, groupId, j.job)),
-    );
+    const results = [];
+    for (const j of jobs) {
+      const result = await boqRunWithModelFallback(tab.id, projectId, j.prompt, j.inputs, groupId, j.job);
+      results.push(result);
+      if (!result || result.error) break;
+    }
     const media = [];
     let fallbackNote = null;
     for (const r of results) {
+      if (r && r.reason === 'PUBLIC_ERROR_UNUSUAL_ACTIVITY') {
+        // A session/security refusal says nothing about the payload template.
+        return fail(403, 'BOQ_PUBLIC_ERROR_UNUSUAL_ACTIVITY — Google từ chối yêu cầu tự động này. Không đồng nghĩa tài khoản hết lượt hoặc project bị khóa. Cần đối chiếu log với một lần tạo trực tiếp thành công trong cùng project.');
+      }
       if (r && r.error === 'QUOTA_DAILY') {
         // Not a payload problem: don't count it against the learned template.
         const names = (r.models || []).map(boqModelLabel).join(' và ');
@@ -2052,6 +2233,115 @@ async function handleBatchGenerateImagesViaBoq(msg) {
 
 // ─── TRPC Request Proxy ─────────────────────────────────────
 
+// Observed on Flow's home page, 12 Oct 2026: jHPbke creates a project.
+// Keep this function self-contained for chrome.scripting serialization.
+async function boqCreateProjectInPage(cfg) {
+  let stage = 'prepare';
+  try {
+  const W = window.WIZ_global_data || {};
+  if (!W.SNlM0e || !W.cfb2h) return { error: 'WIZ_DATA_MISSING' };
+  const rpc = 'jHPbke';
+  const inner = ['projects/*', [null, [cfg.title]], [null, 22]];
+  const query = new URLSearchParams({ rpcids: rpc, 'source-path': window.location.pathname,
+    bl: W.cfb2h, 'f.sid': String(W.FdrFJe || ''), hl: W.EP || 'en',
+    _reqid: String(Math.floor(Math.random() * 900000) + 100000), rt: 'c' });
+  stage = 'request';
+  const response = await fetch('/_/AiSandboxAngularFrontend/data/batchexecute?' + query, {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: new URLSearchParams({ at: W.SNlM0e,
+      'f.req': JSON.stringify([[[rpc, JSON.stringify(inner), null, 'generic']]]) }).toString(),
+  });
+  stage = 'response';
+  const text = await response.text();
+  if (!response.ok) return { error: 'PROJECT_CREATE_HTTP_' + response.status };
+  // Length-prefixed envelopes have one complete JSON frame per line.
+  for (const line of text.split('\n')) {
+    if (!line.trim().startsWith('[')) continue;
+    let frames;
+    try { frames = JSON.parse(line); } catch (e) { continue; }
+    for (const frame of frames) {
+      if (!Array.isArray(frame) || frame[0] !== 'wrb.fr' || frame[1] !== rpc) continue;
+      if (typeof frame[2] !== 'string') {
+        return { error: 'PROJECT_CREATE_RPC_' + (frame[5] && frame[5][0] || 'UNKNOWN') };
+      }
+      let result;
+      try { result = JSON.parse(frame[2]); } catch (e) { return { error: 'PROJECT_CREATE_BAD_REPLY' }; }
+      const projectId = result && result[0];
+      if (typeof projectId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+        return { projectId };
+      }
+    }
+  }
+  return { error: 'PROJECT_CREATE_NO_ID' };
+  } catch (e) {
+    // Exceptions in MAIN-world promises can otherwise arrive as an empty
+    // InjectionResult. Never retry a mutation whose outcome is unknown.
+    return { error: 'PROJECT_CREATE_' + (stage === 'prepare' ? 'PREPARE_FAILED' : 'OUTCOME_UNKNOWN'),
+      stage, cause: e && e.name || 'Error' };
+  }
+}
+
+async function boqWaitForProjectCreationTab(tabId) {
+  const deadline = Date.now() + 45000;
+  do {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === 'complete' && !tab.pendingUrl && !tab.discarded) {
+      const url = new URL(tab.url);
+      if (url.origin !== 'https://flow.google.com'
+          || !(url.pathname === '/' || url.pathname.startsWith('/project/'))) {
+        return { error: 'PROJECT_CREATE_FLOW_SIGN_IN_REQUIRED' };
+      }
+      // Read-only probe: safe to repeat while a newly opened/reloaded tab
+      // initializes. Do not mix this retry loop with the create mutation.
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, frameIds: [0] }, world: 'MAIN',
+        func: () => {
+          const W = window.WIZ_global_data || {};
+          return { ready: document.readyState === 'complete' && !!W.SNlM0e && !!W.cfb2h };
+        },
+      }).catch(() => []);
+      const main = results.find(r => r.frameId === 0);
+      if (main && main.result && main.result.ready) return { documentId: main.documentId };
+    }
+    await sleep(500);
+  } while (Date.now() < deadline);
+  return { error: 'PROJECT_CREATE_FLOW_NOT_READY' };
+}
+
+async function handleCreateProjectViaBoq(msg) {
+  try {
+    const body = msg.params && msg.params.body && msg.params.body.json || {};
+    if (body.toolName && body.toolName !== 'PINHOLE') {
+      return sendToAgent({ id: msg.id, error: 'PROJECT_CREATE_UNSUPPORTED_TOOL' });
+    }
+    const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/*' });
+    const candidates = tabs.filter(t => {
+      try { const p = new URL(t.url).pathname; return p === '/' || p.startsWith('/project/'); }
+      catch (e) { return false; }
+    });
+    let tab = boqChooseTab(candidates);
+    tab = tab ? await reviveTabIfNeeded(tab) : await chrome.tabs.create({ url: 'https://flow.google.com/', active: false });
+    if (!tab || tab.id == null) return sendToAgent({ id: msg.id, error: 'BOQ_NO_FLOW_TAB' });
+    const ready = await boqWaitForProjectCreationTab(tab.id);
+    if (ready.error) return sendToAgent({ id: msg.id, error: ready.error });
+    // Pin to the document checked above so navigation cannot send the
+    // mutation into another page between readiness and execution.
+    const target = ready.documentId ? { tabId: tab.id, documentIds: [ready.documentId] }
+      : { tabId: tab.id, frameIds: [0] };
+    const outputs = await chrome.scripting.executeScript({ target, world: 'MAIN',
+      func: boqCreateProjectInPage, args: [{ title: body.projectTitle || 'Flowboard Session' }] });
+    const out = outputs.find(r => r.frameId === 0);
+    const result = out && out.result || { error: 'PROJECT_CREATE_OUTCOME_UNKNOWN', stage: 'injection_result' };
+    if (result.error) return sendToAgent({ id: msg.id, ...result });
+    // Preserve the SDK's existing contract; the ID comes from jHPbke's reply.
+    sendToAgent({ id: msg.id, status: 200, data: {
+      result: { data: { json: { result: { projectId: result.projectId } } } } } });
+  } catch (e) {
+    sendToAgent({ id: msg.id, error: 'PROJECT_CREATE_' + (e.message || 'FAILED') });
+  }
+}
+
 async function handleTrpcRequest(msg) {
   const { id, params } = msg;
   const { url, method = 'POST', headers = {}, body } = params;
@@ -2067,6 +2357,9 @@ async function handleTrpcRequest(msg) {
   if (!url || !TRPC_PREFIXES.some((p) => url.startsWith(p))) {
     sendToAgent({ id, error: 'INVALID_TRPC_URL' });
     return;
+  }
+  if (new URL(url).pathname === '/fx/api/trpc/project.createProject') {
+    return handleCreateProjectViaBoq(msg);
   }
 
   setState('running');
@@ -2114,7 +2407,7 @@ function broadcastStatus() {
 chrome.runtime.onMessage.addListener((msg, _, reply) => {
   if (msg.type === 'STATUS') {
     reply({
-      connected:       ws?.readyState === WebSocket.OPEN,
+      connected:       bridgeAccepted && ws?.readyState === WebSocket.OPEN,
       flowKeyPresent:  !!flowKey,
       manualDisconnect,
       tokenAge:        metrics.tokenCapturedAt ? Date.now() - metrics.tokenCapturedAt : null,
@@ -2131,14 +2424,19 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
 
   if (msg.type === 'DISCONNECT') {
     manualDisconnect = true;
+    chrome.alarms.clear('reconnect');
     ws?.close();
+    setState('off');
     reply({ ok: true });
     return true;
   }
 
   if (msg.type === 'RECONNECT') {
     manualDisconnect = false;
-    connectToAgent();
+    reconnectAttempts = 0;
+    reconnectAt = 0;
+    chrome.alarms.clear('reconnect');
+    connectToAgent(true);
     reply({ ok: true });
     return true;
   }

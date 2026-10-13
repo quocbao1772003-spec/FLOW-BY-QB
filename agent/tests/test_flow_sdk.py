@@ -87,6 +87,18 @@ async def test_create_project_surfaces_error_when_id_missing():
 
 
 @pytest.mark.asyncio
+async def test_create_project_preserves_unauthorized_response():
+    c = RecordingClient()
+    c.trpc_response = {"status": 401, "data": {"error": {"json": {
+        "message": "UNAUTHORIZED", "data": {"httpStatus": 401}
+    }}}}
+    out = await FlowSDK(client=c).create_project("session")
+    assert out["error"] == "UNAUTHORIZED"
+    assert "project_id" not in out
+    assert out["raw"]["status"] == 401
+
+
+@pytest.mark.asyncio
 async def test_create_project_passes_extension_error_through():
     c = RecordingClient()
     c.trpc_response = {"error": "extension_disconnected"}

@@ -18,7 +18,26 @@ logger = logging.getLogger(__name__)
 
 
 async def _handler(websocket) -> None:
-    flow_client.set_extension(websocket)
+    # Do not select a socket or accept identity before the versioned handshake.
+    # Older profiles can reconnect at any time, including while generation runs.
+    try:
+        hello = json.loads(await asyncio.wait_for(websocket.recv(), timeout=8))
+        valid = (isinstance(hello, dict) and hello.get("type") == "bridge_hello"
+                 and hello.get("protocol") == 2
+                 and isinstance(hello.get("instanceId"), str)
+                 and 16 <= len(hello["instanceId"]) <= 80
+                 and isinstance(hello.get("version"), str))
+        if not valid:
+            await websocket.send(json.dumps({"type": "bridge_rejected", "error": "EXTENSION_UPDATE_REQUIRED"}))
+            await websocket.close(code=4002, reason="Flowboard Bridge 0.1.15+ required")
+            return
+    except (asyncio.TimeoutError, ValueError, websockets.ConnectionClosed):
+        await websocket.close(code=4002, reason="Bridge handshake required")
+        return
+    if not flow_client.set_extension(websocket, instance_id=hello["instanceId"], version=hello["version"]):
+        await websocket.send(json.dumps({"type": "bridge_rejected", "error": "ANOTHER_PROFILE_SELECTED"}))
+        await websocket.close(code=4003, reason="Another browser profile owns this agent session")
+        return
     logger.info("extension connected from %s", getattr(websocket, "remote_address", "?"))
 
     # Hand the extension the secret it needs to authenticate HTTP callbacks.
@@ -31,6 +50,8 @@ async def _handler(websocket) -> None:
 
     try:
         async for raw in websocket:
+            if not flow_client.owns_extension(websocket):
+                break
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
@@ -43,7 +64,7 @@ async def _handler(websocket) -> None:
     except websockets.ConnectionClosed:
         pass
     finally:
-        flow_client.clear_extension()
+        flow_client.clear_extension(websocket)
         logger.info("extension disconnected")
 
 

@@ -1,0 +1,86 @@
+{
+  "comparison": {
+    "state": "pair_available",
+    "manualTime": "2026-10-12T06:52:02.488Z",
+    "failureTime": "2026-10-12T06:49:18.486Z",
+    "projectPath": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+    "model": "GEM_PIX_2",
+    "sameBuild": true,
+    "sameReferenceIds": false,
+    "manualReferenceCount": 2,
+    "extensionReferenceCount": 2,
+    "manualContext": {
+      "path": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+      "visibility": "visible",
+      "captchaApiHasRejectionMarker": true
+    },
+    "extensionContext": {
+      "action": "IMAGE_GENERATION",
+      "captchaApiHasRejectionMarker": true,
+      "path": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+      "siteKeySource": "page",
+      "visibility": "hidden"
+    },
+    "differences": [],
+    "note": "Dynamic UUIDs, seeds, prompts and redacted tokens are masked. Equal shapes do not prove equal authentication or server acceptance.",
+    "samePrompt": true
+  },
+  "evidence": [
+    {
+      "time": "2026-10-12T06:49:18.486Z",
+      "kind": "ours-template",
+      "status": 200,
+      "error": "RPC_7_PERMISSION_DENIED",
+      "hasMedia": false,
+      "sourcePath": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+      "bl": "boq_labs-ai-sandbox-frontend_20261007.14_p0",
+      "context": {
+        "action": "IMAGE_GENERATION",
+        "captchaApiHasRejectionMarker": true,
+        "path": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+        "siteKeySource": "page",
+        "visibility": "hidden"
+      },
+      "model": "GEM_PIX_2",
+      "aspect": 1,
+      "referenceIds": [
+        "071b2e67-57d5-4aa7-ac13-7a06fb364e9b",
+        "f1c1779b-03df-4958-b49f-8d292d243bc9"
+      ],
+      "prompt": [
+        [
+          [
+            "Giữ nguyên bối cảnh thay, góc chụp, ánh sáng, text. Chỉ thay bộ nails trong hộp ở ảnh @mockup (1) #bdam  bằng bộ nails ở ảnh @QB_HLW26_23 #x3xq  một cách tự nhiên như ảnh chụp thật"
+          ]
+        ]
+      ]
+    },
+    {
+      "time": "2026-10-12T06:52:02.488Z",
+      "kind": "app",
+      "status": 200,
+      "error": null,
+      "hasMedia": true,
+      "sourcePath": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+      "bl": "boq_labs-ai-sandbox-frontend_20261007.14_p0",
+      "context": {
+        "path": "/project/8c7322f4-a2bc-4951-be2e-c529f88804bf",
+        "visibility": "visible",
+        "captchaApiHasRejectionMarker": true
+      },
+      "model": "GEM_PIX_2",
+      "aspect": 1,
+      "referenceIds": [
+        "c965d893-6d36-4cca-8ce7-c23df3591322",
+        "f1c1779b-03df-4958-b49f-8d292d243bc9"
+      ],
+      "prompt": [
+        [
+          [
+            "Giữ nguyên bối cảnh thay, góc chụp, ánh sáng, text. Chỉ thay bộ nails trong hộp ở ảnh @mockup (1) #bdam  bằng bộ nails ở ảnh @QB_HLW26_23 #x3xq  một cách tự nhiên như ảnh chụp thật"
+          ]
+        ]
+      ]
+    }
+  ]
+}

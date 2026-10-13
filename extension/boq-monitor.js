@@ -17,6 +17,21 @@
   window.__flowboardMonitor = true;
 
   const ENDPOINT = '/data/batchexecute';
+  const watched = url => String(url).includes(ENDPOINT)
+    || String(url).includes('/api/trpc/project.createProject');
+
+  function bodyText(body) {
+    if (typeof body === 'string') return body;
+    if (body instanceof URLSearchParams) return body.toString();
+    return null;
+  }
+
+  function pageContext() {
+    const execute = window.grecaptcha && window.grecaptcha.enterprise && window.grecaptcha.enterprise.execute;
+    return { path: window.location.pathname, visibility: document.visibilityState,
+      captchaApiHasRejectionMarker: typeof execute === 'function'
+        ? Function.prototype.toString.call(execute).includes('extension_hijack_detected') : null };
+  }
 
   function trace(url, body, status, text) {
     try {
@@ -27,6 +42,7 @@
           status: status,
           head: String(text || '').slice(0, 4000),
           hasMedia: String(text || '').indexOf('flow-content.google') !== -1,
+          context: pageContext(),
         },
       }));
     } catch (e) { /* ignore */ }
@@ -50,10 +66,13 @@
     return origOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (b) {
-    if (this.__fbUrl && String(this.__fbUrl).indexOf(ENDPOINT) !== -1 && !window.__flowboardSelfCall) {
+    if (this.__fbUrl && watched(this.__fbUrl) && !window.__flowboardSelfCall) {
+      // Record before navigation to the new project can destroy this page.
+      const textBody = bodyText(b);
+      trace(this.__fbUrl, textBody, null, 'REQUEST_STARTED');
       const self = this;
       this.addEventListener('loadend', function () {
-        try { report(self.__fbUrl, b, String(self.responseText || ''), self.status); } catch (e) { /* ignore */ }
+        try { report(self.__fbUrl, textBody, String(self.responseText || ''), self.status); } catch (e) { /* ignore */ }
       });
     }
     return origSend.apply(this, arguments);
@@ -62,12 +81,21 @@
   const origFetch = window.fetch;
   window.fetch = async function (input, init) {
     const u = typeof input === 'string' ? input : (input && input.url);
-    const watch = u && String(u).indexOf(ENDPOINT) !== -1
-      && !window.__flowboardSelfCall
-      && init && typeof init.body === 'string';
+    const watch = u && watched(u)
+      && !window.__flowboardSelfCall;
+    let body = Promise.resolve(null);
+    if (watch) {
+      if (init && init.body != null) body = Promise.resolve(bodyText(init.body));
+      else if (typeof Request !== 'undefined' && input instanceof Request) {
+        try { body = input.clone().text().catch(() => null); } catch (e) { /* consumed */ }
+      }
+      body.then(b => trace(u, b, null, 'REQUEST_STARTED')).catch(() => {});
+    }
+    // The observer never consumes the original body or delays the request.
     const res = await origFetch.apply(this, arguments);
     if (watch) {
-      res.clone().text().then(function (t) { report(u, init.body, t, res.status); }).catch(function () {});
+      Promise.all([body, res.clone().text()])
+        .then(([b, t]) => report(u, b, t, res.status)).catch(() => {});
     }
     return res;
   };

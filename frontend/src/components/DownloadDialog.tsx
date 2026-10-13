@@ -19,13 +19,10 @@ import {
   type ImageInfo,
   type NamingFormula,
 } from "../lib/imageExport";
-import { patchCornerMark } from "../lib/cornerPatch";
 import { removeCornerMark } from "../lib/markRemove";
 import { makeZip, uniqueNames } from "../lib/zip";
 import { ChipSelect } from "./ChipSelect";
 import { altTextFromFileName, tagImageMetadata } from "../lib/aiMetadata";
-import { useBoardStore } from "../store/board";
-import { mediaUrl } from "../api/client";
 import "./DownloadDialog.css";
 
 /**
@@ -45,7 +42,7 @@ interface Custom {
 }
 
 interface Saved {
-  /** Cover the ✦ corner mark with the base photo wired into the node. */
+  /** Remove the ✦ corner mark by reversing its transparent white overlay. */
   patchMark: boolean;
   /** formula = one name + running number; groups = a name per group. */
   mode: "formula" | "groups" | "original";
@@ -149,33 +146,6 @@ function outExt(format: ExportFormat | null, info: ImageInfo | undefined, item: 
   return m ? m[1].toLowerCase() : "png";
 }
 
-interface BaseRef {
-  url: string;
-  shortId: string;
-}
-
-/** Images wired into a node — the photos a generated image was based on. */
-function baseRefsFor(nodeId: string | undefined): BaseRef[] {
-  if (!nodeId) return [];
-  const { nodes, edges } = useBoardStore.getState();
-  const out: BaseRef[] = [];
-  for (const e of edges) {
-    if (e.target !== nodeId) continue;
-    const n = nodes.find((x) => x.id === e.source);
-    if (!n) continue;
-    const d = n.data as Record<string, unknown>;
-    const mid =
-      (typeof d.mediaId === "string" && d.mediaId) ||
-      (Array.isArray(d.mediaIds)
-        ? (d.mediaIds as unknown[]).find((m): m is string => typeof m === "string" && !!m)
-        : undefined);
-    if (mid && !out.some((o) => o.url === mediaUrl(mid))) {
-      out.push({ url: mediaUrl(mid), shortId: String(d.shortId ?? n.id) });
-    }
-  }
-  return out;
-}
-
 interface Cleaned {
   blob: Blob;
   before: string;
@@ -185,7 +155,7 @@ interface Cleaned {
 type PatchState =
   | { status: "pending" }
   | { status: "nomark" }
-  | { status: "ok"; result: Cleaned; how: "alpha" | "base"; base?: string };
+  | { status: "ok"; result: Cleaned };
 
 const MIME_FORMAT: Record<string, ExportFormat> = { "image/jpeg": "jpeg", "image/png": "png", "image/webp": "webp" };
 
@@ -427,23 +397,10 @@ function DialogBody({
         const src = blobs[i];
         if (src) {
           try {
-            // 1) Undo the white overlay — recovers the image's own pixels.
+            // Undo the semi-transparent white overlay (reverse alpha
+            // blending) — recovers the image's own pixels under the mark.
             const un = await removeCornerMark(src);
-            if (un) {
-              st = { status: "ok", result: un, how: "alpha" };
-            } else {
-              // 2) Fallback: copy the spot from a base photo wired in.
-              const refs = baseRefsFor(items[i].nodeId);
-              if (refs.length > 0) {
-                const bases = (
-                  await Promise.all(refs.map((r) => fetchBlob(r.url).catch(() => null)))
-                ).filter((b): b is Blob => b !== null);
-                const res = await patchCornerMark(src, bases);
-                if (res && res.box.detected) {
-                  st = { status: "ok", result: res, how: "base", base: refs[res.baseIndex]?.shortId ?? "" };
-                }
-              }
-            }
+            if (un) st = { status: "ok", result: un };
           } catch (e) {
             console.error("[download] corner mark removal failed:", e);
           }
@@ -658,7 +615,7 @@ function DialogBody({
                               <img src={(patches[i] as { result: Cleaned }).result.after} alt="Sau" title="Góc ảnh sau" />
                             </div>
                             <span className="dl-badge dl-badge--ok">
-                              {(patches[i] as { how: string }).how === "alpha" ? "Đã xoá dấu" : "Lấy từ ảnh gốc"}
+                              Đã xoá dấu
                             </span>
                           </>
                         ) : !patches[i] || patches[i].status === "pending" ? (
@@ -678,7 +635,7 @@ function DialogBody({
           <div className="dl-col dl-col--opts">
           <section className="dl-section dl-section--inline">
             <h3><span className="dl-step">1</span>Xoá dấu ✦ ở góc</h3>
-            <label className="dl-switch" title="Tự xoá dấu mờ ở góc, không cần ảnh gốc. Ảnh đã xoá được ghi “AI-generated” trong metadata.">
+            <label className="dl-switch" title="Tự xoá dấu mờ ở góc bằng cách tính ngược độ trong suốt. Ảnh đã xoá được ghi “AI-generated” trong metadata.">
               <input
                 type="checkbox"
                 checked={saved.patchMark}

@@ -4,6 +4,7 @@
  */
 
 let _manualDisconnect = false;
+document.getElementById('extension-version').textContent = 'v' + chrome.runtime.getManifest().version;
 
 function formatTokenAge(ms) {
   if (ms === null || ms === undefined) return 'none';
@@ -52,7 +53,7 @@ function render(status) {
 
   // Toggle button
   const btn = document.getElementById('btn-toggle');
-  if (status.manualDisconnect) {
+  if (status.manualDisconnect || !status.connected) {
     btn.textContent = 'Reconnect';
     btn.className   = 'reconnect';
   } else {
@@ -87,7 +88,7 @@ document.getElementById('btn-refresh').addEventListener('click', () => {
 });
 
 document.getElementById('btn-toggle').addEventListener('click', () => {
-  const type = _manualDisconnect ? 'RECONNECT' : 'DISCONNECT';
+  const type = document.getElementById('btn-toggle').className === 'reconnect' ? 'RECONNECT' : 'DISCONNECT';
   chrome.runtime.sendMessage({ type }, () => {
     if (chrome.runtime.lastError) return;
     fetchStatus();

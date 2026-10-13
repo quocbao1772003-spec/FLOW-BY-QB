@@ -14,7 +14,7 @@ from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
 from flowboard.services.flow_client import flow_client
 from flowboard.services.ws_server import run_ws_server
-from flowboard.worker.processor import get_worker
+from flowboard.worker.processor import get_worker, reset_image_project_session
 
 # Guard rail: the dedicated WS server is unauthenticated and would expose the
 # callback secret to any process that can reach it. Refuse to boot if someone
@@ -51,6 +51,7 @@ def _recover_orphan_running_requests() -> int:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    reset_image_project_session()
     init_db()
     recovered = _recover_orphan_running_requests()
     if recovered:

@@ -4,7 +4,7 @@
 const fs = require("fs");
 
 const path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8");
+const src = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8").replace(/\r\n/g, "\n");
 
 function extract(name) {
   const start = src.indexOf("async function " + name + "(cfg) {");
@@ -39,6 +39,7 @@ global.window = {
   grecaptcha: { enterprise: { execute: async () => "0cAFcWeA5_fake_token" } },
   crypto: { randomUUID: () => "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
 };
+window.__flowboardMintCaptcha = async (action, key) => window.grecaptcha.enterprise.execute(key, { action });
 global.fetch = async (url, init) => {
   captured = { url, body: init.body };
   return { ok: true, status: 200, text: async () => reply };
@@ -99,6 +100,65 @@ const boqGenerateInPage = eval("(" + extract("boqGenerateInPage") + ")");
     endpoint: "/x", rpcId: "ogiZ0b", siteKey: "k", modelTag: "NARWHAL", surfaceId: 22,
   });
   check("recovers url from mangled envelope", r.url === URL_, r.error || r.url);
+
+  global.fetch = async (url, init) => {
+    captured = { url, body: init.body };
+    return { ok: true, status: 200, text: async () => reply };
+  };
+  const template = { skeleton: JSON.parse(JSON.stringify(sent2)), paths: {
+    prompt: [1, 0, 8, 0, 0, 0], project: [[1, 0, 7, 5], [3, 5]],
+    token: [[1, 0, 7, 10, 0], [3, 10, 0]], seed: [1, 0, 3],
+    group: [], uuids: [], inputs: [1, 0, 2], inputEntry: [null, null, null, null, 1], inputIdIndex: 0,
+  } };
+  template.skeleton[1][0][5] = 'GEM_PIX_2';
+  await boqGenerateInPage({ projectId: 'p', prompt: 'x', mediaInputs: [],
+    endpoint: '/x', rpcId: 'ogiZ0b', siteKey: 'k', modelTag: 'NARWHAL', aspect: 3,
+    surfaceId: 22, seed: 10, template });
+  const selected = JSON.parse(JSON.parse(new URLSearchParams(captured.body).get('f.req'))[0][0][1]);
+  check('learned template respects selected model', selected[1][0][5] === 'NARWHAL');
+  check('learned template respects selected aspect', selected[1][0][4] === 3);
+  template.paths.inputEntry[4] = 2;
+  await boqGenerateInPage({ projectId: 'p', prompt: 'edit', mediaInputs: ['base', 'ref'],
+    inputTypes: [2, 1], endpoint: '/x', rpcId: 'ogiZ0b', siteKey: 'k',
+    modelTag: 'NARWHAL', surfaceId: 22, seed: 10, template });
+  const edited = JSON.parse(JSON.parse(new URLSearchParams(captured.body).get('f.req'))[0][0][1]);
+  check('learned template preserves base vs reference roles',
+    edited[1][0][2][0][4] === 2 && edited[1][0][2][1][4] === 1);
+
+  global.fetch = async () => ({ ok: true, status: 200, text: async () =>
+    `)]}'\n192\n[["wrb.fr","ogiZ0b",null,null,null,[7,null,[["type.googleapis.com/google.rpc.ErrorInfo",["PUBLIC_ERROR_UNUSUAL_ACTIVITY"]]]],"generic"]]` });
+  r = await boqGenerateInPage({ projectId: "p", prompt: "x", mediaInputs: [],
+    endpoint: "/x", rpcId: "ogiZ0b", siteKey: "k", modelTag: "NARWHAL", surfaceId: 22 });
+  check("security refusal keeps status", r.error === "RPC_7_PERMISSION_DENIED");
+  check("security refusal keeps reason", r.reason === "PUBLIC_ERROR_UNUSUAL_ACTIVITY");
+  let dispatched = false;
+  global.fetch = async () => { dispatched = true; return { ok: true, status: 200, text: async () => reply }; };
+  const pageExecute = async () => 'extension_hijack_detected';
+  window.grecaptcha.enterprise.execute = pageExecute;
+  r = await boqGenerateInPage({ projectId: 'p', prompt: 'x', mediaInputs: [], endpoint: '/x', rpcId: 'ogiZ0b' });
+  check('marker is evidence only, not a fabricated server refusal', !r.error && dispatched && r.traceContext.captchaApiHasRejectionMarker);
+  check('page captcha API is not modified', window.grecaptcha.enterprise.execute === pageExecute);
+
+  dispatched = false;
+  delete window.__flowboardMintCaptcha;
+  r = await boqGenerateInPage({ projectId: 'p', prompt: 'x', mediaInputs: [], endpoint: '/x', rpcId: 'ogiZ0b' });
+  check('stale content script fails before any network mutation', r.error === 'CAPTCHA_BRIDGE_RELOAD_REQUIRED' && !dispatched);
+
+  const queueStart = src.indexOf("let boqGenerationTail =");
+  const queueEnd = src.indexOf("async function boqRunOneNow", queueStart);
+  let active = 0, peak = 0, calls = 0;
+  const boqRunOneNow = async () => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    active--; calls++;
+    if (calls === 1) throw new Error("dispatch failed");
+    return { mediaId: "ok" };
+  };
+  const queued = eval("(() => {" + src.slice(queueStart, queueEnd) + "; return boqRunOne; })()");
+  const outcomes = await Promise.allSettled([queued(), queued(), queued()]);
+  check("page calls never overlap", peak === 1);
+  check("queue recovers after rejection", outcomes[0].status === "rejected"
+    && outcomes[1].status === "fulfilled" && outcomes[2].status === "fulfilled");
 
   console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
   process.exit(fails === 0 ? 0 : 1);

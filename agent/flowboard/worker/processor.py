@@ -84,6 +84,7 @@ async def _with_ref_recovery(
     project_id: str,
     ref_ids: list[str],
     dispatch: Callable[[list[str]], Awaitable[dict]],
+    initial_refs: Optional[list[str]] = None,
 ) -> dict:
     """Run ``dispatch(refs)``; on a NOT_FOUND failure re-upload ``ref_ids``
     under the project and dispatch once more with the fresh ids."""
@@ -91,7 +92,7 @@ async def _with_ref_recovery(
 
     if not ref_ids:
         return await dispatch([])
-    first_try = substitute_cached(ref_ids, project_id)
+    first_try = initial_refs if initial_refs is not None else substitute_cached(ref_ids, project_id)
     resp = await dispatch(first_try)
     if not _is_ref_not_found(resp.get("error")):
         return resp
@@ -123,18 +124,53 @@ async def _handle_create_project(params: dict) -> tuple[dict, Optional[str]]:
     return resp, None
 
 
-async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
-    from flowboard.services.flow_sdk import is_valid_project_id
+_image_session_project: Optional[str] = None
+_image_session_owner: Optional[str] = None
+_image_session_lock: Optional[asyncio.Lock] = None
 
+
+def reset_image_project_session() -> None:
+    global _image_session_project, _image_session_owner, _image_session_lock
+    _image_session_project = None
+    _image_session_owner = None
+    _image_session_lock = None
+
+
+async def _new_image_project(ref_ids: list[str]) -> dict:
+    """Create lazily once per app session; sync references into that project."""
+    global _image_session_project, _image_session_owner, _image_session_lock
+    from flowboard.services.flow_sdk import is_valid_project_id
+    from flowboard.services.media_project_sync import ensure_media_ids_in_project
+
+    if _image_session_lock is None:
+        _image_session_lock = asyncio.Lock()
+    async with _image_session_lock:
+        owner = (flow_client.user_info or {}).get("email")
+        if _image_session_owner and owner and owner != _image_session_owner:
+            _image_session_project = None
+        if _image_session_project is None:
+            created = await get_flow_sdk().create_project(
+                "Flowboard Session " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "PINHOLE",
+            )
+            project_id = created.get("project_id")
+            if created.get("error") or not isinstance(project_id, str) or not is_valid_project_id(project_id):
+                return {"error": "NEW_IMAGE_PROJECT_FAILED: " + str(created.get("error") or "invalid_project_id"), "raw": created}
+            _image_session_project = project_id
+        if owner:
+            _image_session_owner = owner
+        project_id = _image_session_project
+    synced, failures = await ensure_media_ids_in_project(ref_ids, project_id)
+    if failures or len(synced) != len(ref_ids):
+        return {"project_id": project_id, "sync_failures": failures,
+                "error": "NEW_IMAGE_PROJECT_REF_SYNC_FAILED: " + str(failures)[:150]}
+    return {"project_id": project_id, "ref_media_ids": synced}
+
+
+async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     prompt = params.get("prompt")
-    project_id = params.get("project_id")
     if not isinstance(prompt, str) or not prompt.strip():
         return {}, "missing_prompt"
-    if not isinstance(project_id, str) or not project_id.strip():
-        return {}, "missing_project_id"
-    project_id = project_id.strip()
-    if not is_valid_project_id(project_id):
-        return {}, "invalid_project_id"
     aspect = params.get("aspect_ratio") or "IMAGE_ASPECT_RATIO_LANDSCAPE"
     # Tier resolution: caller-stamped value first (set at dispatch time),
     # then the live value from `flow_client` (resolved authoritatively
@@ -172,6 +208,10 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     image_model = params.get("image_model")
     if not isinstance(image_model, str) or not image_model.strip():
         image_model = None
+    prepared = await _new_image_project(ref_media_ids or [])
+    if prepared.get("error"):
+        return prepared, str(prepared["error"])[:200]
+    project_id = prepared["project_id"]
     async def _dispatch(refs: list[str]) -> dict:
         return await get_flow_sdk().gen_image(
             prompt=prompt.strip(),
@@ -184,7 +224,12 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
             image_model=image_model,
         )
 
-    resp = await _with_ref_recovery(project_id, ref_media_ids or [], _dispatch)
+    # Keep original IDs for recovery: the synced IDs have no local files.
+    # _with_ref_recovery resolves the project mapping before dispatching.
+    resp = await _with_ref_recovery(
+        project_id, ref_media_ids or [], _dispatch, prepared["ref_media_ids"]
+    )
+    resp["project_id"] = project_id
     if resp.get("error"):
         return resp, str(resp["error"])[:200]
     # Flow returns signed fifeUrls directly in the response — persist them
@@ -450,18 +495,10 @@ async def _handle_gen_video(params: dict) -> tuple[dict, Optional[str]]:
 
 
 async def _handle_edit_image(params: dict) -> tuple[dict, Optional[str]]:
-    from flowboard.services.flow_sdk import is_valid_project_id
-
     prompt = params.get("prompt")
-    project_id = params.get("project_id")
     source_media_id = params.get("source_media_id") or params.get("sourceMediaId")
     if not isinstance(prompt, str) or not prompt.strip():
         return {}, "missing_prompt"
-    if not isinstance(project_id, str) or not project_id.strip():
-        return {}, "missing_project_id"
-    project_id = project_id.strip()
-    if not is_valid_project_id(project_id):
-        return {}, "invalid_project_id"
     if not isinstance(source_media_id, str) or not source_media_id.strip():
         return {}, "missing_source_media_id"
     aspect = params.get("aspect_ratio") or "IMAGE_ASPECT_RATIO_LANDSCAPE"
@@ -479,6 +516,11 @@ async def _handle_edit_image(params: dict) -> tuple[dict, Optional[str]]:
     if not isinstance(image_model, str) or not image_model.strip():
         image_model = None
 
+    prepared = await _new_image_project([source_media_id.strip(), *(ref_ids or [])])
+    if prepared.get("error"):
+        return prepared, str(prepared["error"])[:200]
+    project_id = prepared["project_id"]
+
     # The source image is a reference too as far as Flow's lookup goes, so
     # it rides along in the recovery list (first slot) and is split back out.
     async def _dispatch(refs: list[str]) -> dict:
@@ -493,8 +535,10 @@ async def _handle_edit_image(params: dict) -> tuple[dict, Optional[str]]:
         )
 
     resp = await _with_ref_recovery(
-        project_id, [source_media_id.strip(), *(ref_ids or [])], _dispatch
+        project_id, [source_media_id.strip(), *(ref_ids or [])], _dispatch,
+        prepared["ref_media_ids"],
     )
+    resp["project_id"] = project_id
     if resp.get("error"):
         return resp, str(resp["error"])[:200]
     entries_with_urls = [

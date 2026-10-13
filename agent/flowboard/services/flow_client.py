@@ -65,6 +65,10 @@ class FlowClient:
 
     def __init__(self) -> None:
         self._ws: Optional[Any] = None
+        # A browser profile owns the bridge for this agent session. Reconnects
+        # may resume it; a second profile must never steal its requests/identity.
+        self._extension_instance: Optional[str] = None
+        self._extension_version: Optional[str] = None
         self._pending: dict[str, asyncio.Future] = {}
         self._callback_secret: str = secrets.token_urlsafe(32)
 
@@ -112,11 +116,27 @@ class FlowClient:
     def callback_secret(self) -> str:
         return self._callback_secret
 
-    def set_extension(self, ws: Any) -> None:
+    def set_extension(self, ws: Any, *, instance_id: Optional[str] = None,
+                      version: Optional[str] = None) -> bool:
+        if self._ws is not None and self._ws is not ws:
+            return False
+        if self._extension_instance and instance_id != self._extension_instance:
+            return False
         self._ws = ws
+        if instance_id:
+            self._extension_instance = instance_id
+        self._extension_version = version
+        self._callback_secret = secrets.token_urlsafe(32)
+        return True
 
-    def clear_extension(self) -> None:
+    def owns_extension(self, ws: Any) -> bool:
+        return self._ws is ws
+
+    def clear_extension(self, ws: Any = None) -> None:
+        if ws is not None and not self.owns_extension(ws):
+            return
         self._ws = None
+        self._callback_secret = secrets.token_urlsafe(32)
         self._flow_key_present = False
         self._flow_key = None
         # Drop the cached identity + tier — next reconnect will replay.
@@ -170,6 +190,7 @@ class FlowClient:
         """
         if not self._flow_key:
             return False
+        source_ws, source_key = self._ws, self._flow_key
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
@@ -183,6 +204,8 @@ class FlowClient:
                 )
         except httpx.HTTPError as exc:
             logger.warning("fetch_paygate_tier transport error: %s", exc)
+            return False
+        if self._ws is not source_ws or self._flow_key != source_key:
             return False
         if resp.status_code != 200:
             logger.warning(
@@ -456,6 +479,8 @@ class FlowClient:
         )
         return {
             "connected": self.connected,
+            "extension_version": self._extension_version,
+            "extension_instance": self._extension_instance,
             "flow_key_present": self._flow_key_present,
             "token_age_s": token_age,
             "pending": len(self._pending),

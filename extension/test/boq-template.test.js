@@ -2,7 +2,7 @@
 // they actually ship in background.js.
 const fs = require("fs");
 const path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8");
+const src = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8").replace(/\r\n/g, "\n");
 
 // Pull out the pure helpers by name. They are top-level declarations, so the
 // closing brace is the first line that is exactly "}" at column 0.

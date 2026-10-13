@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const src = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8').replace(/\r\n/g, '\n');
+const start = src.indexOf('function boqRedact(');
+const end = src.indexOf('\n}\n', start) + 3;
+const redact = eval('(' + src.slice(start, end) + ')');
+const token = 'SECRET'.repeat(200);
+const payload = [null, [[null, 'prompt', [token, 1]]], 1];
+const result = redact(JSON.stringify(payload));
+assert.ok(result.__json, 'long JSON retains structure');
+assert.equal(result.__json[1][0][2][0], '<LONG_1200>');
+assert.equal(JSON.stringify(result).includes(token), false);
+assert.equal(result.__json[1][0][1], 'prompt');
+console.log('ALL PASS: trace structure retained, tokens removed');
+const traceStart = src.indexOf('function boqForwardTrace(');
+const traceEnd = src.indexOf('\n}\n', traceStart) + 3;
+const records = [];
+const ws = { readyState: 1, send: x => records.push(JSON.parse(x)) };
+const WebSocket = { OPEN: 1 };
+const boqRedact = redact;
+const forward = eval('(' + src.slice(traceStart, traceEnd) + ')');
+forward('app', { url: 'https://flow.google.com/data/batchexecute?rpcids=ogiZ0b',
+  body: new URLSearchParams({ at: 'PRIVATE_AT', 'f.req': JSON.stringify([[['ogiZ0b', JSON.stringify(payload)]]]) }).toString(),
+  status: 200, hasMedia: true });
+for (let i = 0; i < 100; i++) forward('app', { url: 'https://flow.google.com/data/batchexecute?rpcids=listing' });
+assert.equal(records.length, 1, 'housekeeping cannot evict the generation trace');
+assert.equal(records[0].trace.status, 200);
+assert.ok(!JSON.stringify(records).includes('PRIVATE_AT'));
+assert.ok(!JSON.stringify(records).includes(token));
+console.log('ALL PASS: generation evidence retained, housekeeping filtered, at omitted');

@@ -10,6 +10,11 @@
 // is softened like the JPEG-blurred original, the exact spot/size is refined
 // by looking for the cleanest result, and a 3 px band along the outline is
 // filled from both sides so no ring is left.
+//
+// Newer models stamp the same star much stronger (≈50 % instead of 30 %),
+// so the opacity is measured on every image from the brightness step across
+// the star's outline; a reading close to the classic mark snaps to the
+// calibrated 0.304.
 
 export interface MarkBox {
   cx: number;
@@ -22,12 +27,18 @@ export interface MarkRemoveResult {
   box: MarkBox;
   before: string;
   after: string;
+  /** Opacity of the mark that was undone. */
+  opacity: number;
 }
 
 const OFFSET = 102; // px from right/bottom edge to centre, at 1024 px
 const RADIUS = 26.75;
 const POWER = 0.65;
-const OPACITY = 0.304;
+const OPACITY = 0.304; // classic mark
+const MIN_OPACITY = 0.12;
+const MAX_OPACITY = 0.8;
+// The outline pairs read a little low (edge softening): 0.288 → 0.304.
+const PAIR_GAIN = 1 / 0.947;
 const EDGE_SIGMA = 0.7;
 
 interface Patch {
@@ -36,6 +47,7 @@ interface Patch {
   w: number;
   h: number;
   a: Float32Array;
+  op: number;
 }
 
 function gaussBlur(a: Float32Array, w: number, h: number, sigma: number): Float32Array {
@@ -72,7 +84,7 @@ function gaussBlur(a: Float32Array, w: number, h: number, sigma: number): Float3
 }
 
 /** Opacity of the mark per pixel around (cx, cy), supersampled. */
-function markPatch(box: MarkBox, W: number, H: number, ss: number): Patch {
+function markPatch(box: MarkBox, W: number, H: number, ss: number, op: number): Patch {
   const { cx, cy, r } = box;
   const x0 = Math.max(0, Math.floor(cx - r - 3));
   const y0 = Math.max(0, Math.floor(cy - r - 3));
@@ -92,10 +104,10 @@ function markPatch(box: MarkBox, W: number, H: number, ss: number): Patch {
           if (u + v <= rp) hit++;
         }
       }
-      a[y * w + x] = (OPACITY * hit) / (ss * ss);
+      a[y * w + x] = (op * hit) / (ss * ss);
     }
   }
-  return { x0, y0, w, h, a: gaussBlur(a, w, h, EDGE_SIGMA) };
+  return { x0, y0, w, h, a: gaussBlur(a, w, h, EDGE_SIGMA), op };
 }
 
 /** Un-blend the mark inside the patch; returns the corrected RGB window. */
@@ -120,7 +132,7 @@ function edgeBand(p: Patch): Uint8Array {
   const band = new Uint8Array(p.w * p.h);
   for (let i = 0; i < band.length; i++) {
     const a = p.a[i];
-    if (a > 0.02 * OPACITY && a < 0.95 * OPACITY) band[i] = 1;
+    if (a > 0.02 * p.op && a < 0.95 * p.op) band[i] = 1;
   }
   // dilate by one pixel
   const out = band.slice();
@@ -149,11 +161,10 @@ function outlineTV(win: Float32Array, p: Patch, band: Uint8Array): number {
   return tv;
 }
 
-/** Is the mark really there? Sample pairs of pixels just inside and just
- *  outside the star's curved edges and compare the brightness step with the
- *  one a 30 % white overlay produces there. Local pairs, so a background
- *  that changes across the corner (skin → white) doesn't fool it. */
-function markPresent(img: ImageData, box: MarkBox): boolean {
+/** Brightness pairs just inside / just outside the star's curved edges.
+ *  Local pairs, so a background that changes across the corner (skin →
+ *  white) doesn't fool the tests below. */
+function outlinePairs(img: ImageData, box: MarkBox): { lin: number; lout: number }[] {
   const W = img.width;
   const H = img.height;
   const lumAt = (x: number, y: number) => {
@@ -162,13 +173,8 @@ function markPresent(img: ImageData, box: MarkBox): boolean {
     const i = (yi * W + xi) * 4;
     return 0.299 * img.data[i] + 0.587 * img.data[i + 1] + 0.114 * img.data[i + 2];
   };
-  const k = box.r / RADIUS;
-  const dIn = 3.5 * k;
-  const dOut = 3.5 * k;
-  let obs = 0;
-  let exp = 0;
-  let agree = 0;
-  let n = 0;
+  const d = 3.5 * (box.r / RADIUS);
+  const out: { lin: number; lout: number }[] = [];
   for (let q = 0; q < 4; q++) {
     for (let deg = 15; deg <= 75; deg += 3) {
       const th = ((q * 90 + deg) * Math.PI) / 180;
@@ -182,28 +188,60 @@ function markPresent(img: ImageData, box: MarkBox): boolean {
       const len = Math.hypot(nx, ny) || 1;
       nx /= len;
       ny /= len;
-      const lin = lumAt(box.cx + ex - nx * dIn, box.cy + ey - ny * dIn);
-      const lout = lumAt(box.cx + ex + nx * dOut, box.cy + ey + ny * dOut);
-      const e = OPACITY * (255 - lout);
-      const o = lin - lout;
-      obs += o;
-      exp += e;
-      if (e > 1 && o > 0.4 * e && o < 1.8 * e) agree++;
-      n++;
+      out.push({
+        lin: lumAt(box.cx + ex - nx * d, box.cy + ey - ny * d),
+        lout: lumAt(box.cx + ex + nx * d, box.cy + ey + ny * d),
+      });
     }
+  }
+  return out;
+}
+
+/** Measure the mark's opacity from the step across its outline (median of
+ *  step / room-to-white). Null when there's no consistent white star. */
+function measureOpacity(img: ImageData, box: MarkBox): number | null {
+  const ratios = outlinePairs(img, box)
+    .filter((p) => 255 - p.lout > 12)
+    .map((p) => (p.lin - p.lout) / (255 - p.lout))
+    .sort((x, y) => x - y);
+  if (ratios.length < 20) return null; // near-white corner: nothing to undo
+  const raw = ratios[ratios.length >> 1];
+  const agree = ratios.filter((r) => r > 0.4 * raw && r < 1.8 * raw).length / ratios.length;
+  if (raw < MIN_OPACITY / PAIR_GAIN || agree < 0.6) return null;
+  const op = Math.min(MAX_OPACITY, raw * PAIR_GAIN);
+  // Classic mark: keep the value measured against source photos.
+  return Math.abs(op - OPACITY) < 0.06 ? OPACITY : op;
+}
+
+/** Is the mark really there? Compare the brightness step across the outline
+ *  with the one an overlay of this opacity produces there. */
+function markPresent(img: ImageData, box: MarkBox, op: number): boolean {
+  let obs = 0;
+  let exp = 0;
+  let agree = 0;
+  let n = 0;
+  for (const { lin, lout } of outlinePairs(img, box)) {
+    const e = op * (255 - lout);
+    const o = lin - lout;
+    obs += o;
+    exp += e;
+    if (e > 1 && o > 0.4 * e && o < 1.8 * e) agree++;
+    n++;
   }
   if (!n || exp / n < 3) return false; // near-white corner: a mark would be invisible anyway
   const ratio = obs / exp;
   return ratio > 0.6 && ratio < 1.5 && agree / n > 0.6;
 }
 
-function locate(img: ImageData): MarkBox | null {
+function locate(img: ImageData): { box: MarkBox; op: number } | null {
   const W = img.width;
   const H = img.height;
   const k = Math.min(W, H) / 1024;
   const def: MarkBox = { cx: W - OFFSET * k, cy: H - OFFSET * k, r: RADIUS * k };
+  const op = measureOpacity(img, def);
+  if (op === null) return null;
   const score = (b: MarkBox) => {
-    const p = markPatch(b, W, H, 2);
+    const p = markPatch(b, W, H, 2, op);
     return outlineTV(unblend(img, p), p, edgeBand(p));
   };
   const tDef = score(def);
@@ -220,7 +258,7 @@ function locate(img: ImageData): MarkBox | null {
   }
   // Stay on the measured placement unless something else is clearly better.
   const box = best.t < 0.85 * tDef ? best.box : def;
-  return markPresent(img, box) ? box : null;
+  return markPresent(img, box, op) ? { box, op } : null;
 }
 
 function canvasOf(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -250,10 +288,11 @@ export async function removeCornerMark(blob: Blob): Promise<MarkRemoveResult | n
   bmp.close();
   const img = srcCtx.getImageData(0, 0, W, H);
 
-  const box = locate(img);
-  if (!box) return null;
+  const found = locate(img);
+  if (!found) return null;
+  const { box, op } = found;
 
-  const p = markPatch(box, W, H, 4);
+  const p = markPatch(box, W, H, 4, op);
   const win = unblend(img, p);
   // Fill the thin outline band from its neighbours (Jacobi relaxation):
   // the JPEG-softened edge never matches a model exactly.
@@ -294,5 +333,5 @@ export async function removeCornerMark(blob: Blob): Promise<MarkRemoveResult | n
   const png: Blob = await new Promise((resolve, reject) =>
     resCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png"),
   );
-  return { blob: png, box, before, after };
+  return { blob: png, box, before, after, opacity: op };
 }
