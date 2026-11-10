@@ -90,6 +90,7 @@ class AccountPool:
             "exhausted": {},         # key -> {"at": ts, "until": ts, "reason": str}
             "labels": {},            # instance_id -> last known email
             "primary": None,         # first account ever seen (owns legacy projects)
+            "events": [],            # recent automatic switches, newest last
         }
         self._load()
 
@@ -312,6 +313,13 @@ class AccountPool:
             self._save()
         logger.info("account %s marked out of quota until reset", key)
 
+    def record_switch(self, from_key: str, to_key: str, reason: str = "") -> None:
+        with self._lock:
+            ev = self._state.setdefault("events", [])
+            ev.append({"at": time.time(), "from": from_key, "to": to_key, "reason": str(reason)[:160]})
+            del ev[:-50]
+            self._save()
+
     def clear_exhausted(self, key: Optional[str] = None) -> None:
         with self._lock:
             if key is None:
@@ -383,6 +391,7 @@ class AccountPool:
             "active": cur_key,
             "primary": self._state.get("primary"),
             "accounts": listed,
+            "events": list(reversed(self._state.get("events") or []))[:20],
         }
 
     # test helper
@@ -391,7 +400,7 @@ class AccountPool:
             self._clients.clear()
             self._connected_order.clear()
             self._state.update({"auto_rotate": True, "selected": None, "order": [],
-                                "exhausted": {}, "labels": {}, "primary": None})
+                                "exhausted": {}, "labels": {}, "primary": None, "events": []})
 
 
 class FlowClientProxy:

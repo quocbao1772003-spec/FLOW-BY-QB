@@ -7,6 +7,7 @@ import {
   IconGridLayout,
   IconImage,
   IconSidebar,
+  IconUser,
 } from "../canvas/icons";
 
 // Magnific-style app sidebar: brand on top, primary destinations below
@@ -17,6 +18,7 @@ const ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [
   { view: "flows", label: "Flows", icon: <IconFrame size={15} /> },
   { view: "imagegen", label: "Image Gen", icon: <IconImage size={15} /> },
   { view: "library", label: "Library", icon: <IconGridLayout size={15} /> },
+  { view: "accounts", label: "Tài khoản Flow", icon: <IconUser size={15} /> },
 ];
 
 const LS_KEY = "flowboard:sidebarCollapsed";

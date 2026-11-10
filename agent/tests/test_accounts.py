@@ -91,6 +91,7 @@ def test_worker_rotates_image_job_to_next_account(client):
     assert seen == ["a@x.test", "b@x.test"]
     assert result["flow_account"] == "b@x.test"
     assert result["account_switches"][0]["from"] == "a@x.test"
+    assert account_pool.snapshot()["events"][0]["to"] == "b@x.test"
     assert account_projects.media_owner("m-1") == "b@x.test"
     assert account_pool.snapshot()["accounts"][0]["exhausted"] is True
     # The next job starts directly on b.
@@ -177,3 +178,20 @@ def test_existing_media_runs_on_its_owner_account(client):
     assert owner is a and pid == "proj-a"
     assert account_projects.owner_route("img-unknown", "proj-b") == (None, "proj-b")
     assert not account_projects.media_usable("img-a")
+
+
+def test_accounts_api_reports_today_usage(client):
+    from flowboard.db import get_session
+    from flowboard.db.models import Request
+
+    _connect("a@x.test", "inst-AAAAAAAAAAAAAAAA")
+    _connect("b@x.test", "inst-BBBBBBBBBBBBBBBB")
+    with get_session() as s:
+        s.add(Request(type="gen_image", status="done", params={},
+                      result={"flow_account": "b@x.test", "media_ids": ["x", "y"],
+                              "account_switches": [{"from": "a@x.test", "to": "b@x.test"}]}))
+        s.add(Request(type="proxy", status="done", params={}, result={"flow_account": "b@x.test"}))
+        s.commit()
+    rows = {a["key"]: a["today"] for a in client.get("/api/accounts").json()["accounts"]}
+    assert rows["b@x.test"] == {"jobs": 1, "done": 1, "failed": 0, "media": 2, "switched_away": 0}
+    assert rows["a@x.test"]["switched_away"] == 1

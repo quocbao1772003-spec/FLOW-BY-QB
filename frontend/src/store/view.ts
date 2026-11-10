@@ -5,7 +5,8 @@ import { create } from "zustand";
 //   flows    — gallery of boards ("Spaces" page)
 //   imagegen — standalone single-image generator
 //   library  — all generated/uploaded media
-export type AppView = "canvas" | "flows" | "imagegen" | "library";
+//   accounts — Google Flow accounts (Chrome profiles) and auto switching
+export type AppView = "canvas" | "flows" | "imagegen" | "library" | "accounts";
 
 interface ViewState {
   view: AppView;

@@ -9,9 +9,66 @@ from flowboard.services.flow_client import account_pool
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
+def _extension_dir() -> str:
+    from flowboard.config import ROOT
+
+    return str(ROOT / "extension")
+
+
+_GEN_TYPES = {"gen_image", "edit_image", "gen_video", "gen_video_omni"}
+
+
+def _usage_today() -> dict[str, dict]:
+    """Per account: generation jobs finished since local midnight."""
+    from datetime import datetime, timezone
+
+    from sqlmodel import select
+
+    from flowboard.db import get_session
+    from flowboard.db.models import Request
+
+    start = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    out: dict[str, dict] = {}
+    with get_session() as s:
+        rows = s.exec(select(Request).order_by(Request.id.desc()).limit(3000)).all()
+    for r in rows:
+        if r.type not in _GEN_TYPES:
+            continue
+        created = r.created_at
+        if created is not None:
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created < start:
+                continue
+        res = r.result or {}
+        acct = res.get("flow_account")
+        if not acct:
+            continue
+        u = out.setdefault(acct, {"jobs": 0, "done": 0, "failed": 0, "media": 0, "switched_away": 0})
+        u["jobs"] += 1
+        if r.status == "done":
+            u["done"] += 1
+            u["media"] += len([m for m in (res.get("media_ids") or []) if m])
+        elif r.status in ("failed", "timeout"):
+            u["failed"] += 1
+        for sw in res.get("account_switches") or []:
+            src = sw.get("from")
+            if src:
+                out.setdefault(src, {"jobs": 0, "done": 0, "failed": 0, "media": 0, "switched_away": 0})
+                out[src]["switched_away"] += 1
+    return out
+
+
 @router.get("")
 def list_accounts() -> dict:
-    return account_pool.snapshot()
+    snap = account_pool.snapshot()
+    try:
+        usage = _usage_today()
+    except Exception:  # noqa: BLE001
+        usage = {}
+    for a in snap["accounts"]:
+        a["today"] = usage.get(a["key"], {"jobs": 0, "done": 0, "failed": 0, "media": 0, "switched_away": 0})
+    return {**snap, "extension_dir": _extension_dir()}
 
 
 class SelectBody(BaseModel):

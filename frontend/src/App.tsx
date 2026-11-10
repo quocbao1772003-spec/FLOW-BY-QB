@@ -8,6 +8,7 @@ import { AppSidebar } from "./components/AppSidebar";
 import { FlowsPage } from "./components/FlowsPage";
 import { ImageGenPage } from "./components/ImageGenPage";
 import { LibraryPage } from "./components/LibraryPage";
+import { AccountsPage } from "./components/AccountsPage";
 import { ReferencesPanel } from "./components/ReferencesPanel";
 import { Toaster } from "./components/Toaster";
 import { GenerationDialog } from "./components/GenerationDialog";
@@ -58,6 +59,7 @@ export function App() {
         {view === "flows" && <FlowsPage />}
         {view === "imagegen" && <ImageGenPage />}
         {view === "library" && <LibraryPage />}
+        {view === "accounts" && <AccountsPage />}
       </ReactFlowProvider>
       {/* <ChatSidebar /> */}
       <AiChatPanel />

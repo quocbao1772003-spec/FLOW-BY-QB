@@ -989,6 +989,7 @@ async def _run_on_accounts(handler: Handler, req_type: str, params: dict) -> tup
                 nkey = account_pool.key_of(nxt)
                 logger.info("account %s out of quota — retrying on %s", key, nkey)
                 switched.append({"from": key, "to": nkey, "reason": str(err)[:160]})
+                account_pool.record_switch(key, nkey, str(err))
                 client = nxt
                 continue
             if len(tried) > 1 or account_pool.connected_clients()[1:]:

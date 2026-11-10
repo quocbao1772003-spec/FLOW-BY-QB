@@ -13,7 +13,7 @@ Chrome profile C (staff.c@...) ─┘
 1. Trong Chrome, bấm vào ảnh đại diện góc trên bên phải, chọn **Thêm** để tạo profile mới (hoặc mở profile có sẵn).
 2. Trong profile đó, cài extension **Flowboard Bridge**: vào `chrome://extensions`, bật Developer mode, chọn Load unpacked, rồi chọn thư mục `extension` trong `E:\FLOW-BY-QB-main`.
 3. Đăng nhập tài khoản Google Flow Pro, mở `labs.google/fx/tools/flow` và để tab đó mở. Extension cần tab Flow để giải captcha.
-4. Ở góc dưới bên trái Flowboard sẽ hiện thêm ô **"N tài khoản"**. Bấm vào để xem danh sách.
+4. Tài khoản tự hiện trong trang **Tài khoản Flow** trên menu bên trái. Ô nhỏ ở góc dưới bên trái cũng mở trang này.
 
 Không lưu mật khẩu ở đâu cả. Mỗi tài khoản vẫn đăng nhập trong Chrome profile của nó.
 
@@ -26,14 +26,17 @@ Không lưu mật khẩu ở đâu cả. Mỗi tài khoản vẫn đăng nhập 
 - Ảnh tham chiếu và ảnh gốc làm video thuộc tài khoản khác sẽ được tự upload lại sang tài khoản đang chạy, từ bản lưu trên máy.
 - Mỗi board có một Flow project riêng cho từng tài khoản. Project cũ trước khi có tính năng này được tính là của tài khoản đầu tiên kết nối.
 
-## Trong ô tài khoản
+## Trang Tài khoản Flow
 
 | Mục | Ý nghĩa |
 |---|---|
 | Đang dùng | Lệnh mới sẽ chạy trên tài khoản này |
 | Sẵn sàng | Còn lượt, sẽ được dùng khi tài khoản trên hết |
 | Hết lượt · mở lại lúc 15:05 | Đã hết lượt hôm nay |
-| Bấm vào một tài khoản | Ưu tiên tài khoản đó. Bấm lần nữa để bỏ ưu tiên |
+| Ưu tiên dùng / Bỏ ưu tiên | Chọn tài khoản dùng trước |
+| Mũi tên ▲▼ | Đổi thứ tự dùng: tài khoản 1 hết lượt thì sang 2, rồi 3 |
+| Số liệu | Lệnh xong, ảnh/video, lỗi, số lần bị đổi đi, tính từ 0 giờ hôm nay |
+| Lần tự đổi gần đây | Nhật ký các lần tự chuyển tài khoản và lý do |
 | Tự đổi khi hết lượt | Tắt đi thì luôn dùng tài khoản đang chọn, không tự chuyển |
 
 Node nào tạo xong sẽ ghi lại tài khoản đã tạo (`flowAccount`).
