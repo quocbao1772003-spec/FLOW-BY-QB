@@ -9,6 +9,11 @@ import { FlowsPage } from "./components/FlowsPage";
 import { ImageGenPage } from "./components/ImageGenPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { AccountsPage } from "./components/AccountsPage";
+import { TemplatesPage } from "./components/TemplatesPage";
+import { TeamPage } from "./components/TeamPage";
+import { LoginScreen } from "./components/LoginScreen";
+import { PublishTemplateDialog } from "./components/PublishTemplateDialog";
+import { useSessionStore, watchUnauthorized } from "./store/session";
 import { ReferencesPanel } from "./components/ReferencesPanel";
 import { Toaster } from "./components/Toaster";
 import { GenerationDialog } from "./components/GenerationDialog";
@@ -21,7 +26,24 @@ import { useReferencesStore } from "./store/references";
 import { useViewStore } from "./store/view";
 import { useMcpSync } from "./lib/mcpSync";
 
+watchUnauthorized();
+
 export function App() {
+  const sessionLoaded = useSessionStore((s) => s.loaded);
+  const authRequired = useSessionStore((s) => s.authRequired);
+  const user = useSessionStore((s) => s.user);
+  const refreshSession = useSessionStore((s) => s.refresh);
+
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  if (!sessionLoaded) return <div className="canvas-loading">Đang tải…</div>;
+  if (authRequired && !user) return <LoginScreen />;
+  return <Workspace />;
+}
+
+function Workspace() {
   const loadInitialBoard = useBoardStore((s) => s.loadInitialBoard);
   const loadReferences = useReferencesStore((s) => s.load);
   const loading = useBoardStore((s) => s.loading);
@@ -60,6 +82,8 @@ export function App() {
         {view === "imagegen" && <ImageGenPage />}
         {view === "library" && <LibraryPage />}
         {view === "accounts" && <AccountsPage />}
+        {view === "templates" && <TemplatesPage />}
+        {view === "team" && <TeamPage />}
       </ReactFlowProvider>
       {/* <ChatSidebar /> */}
       <AiChatPanel />
@@ -68,6 +92,7 @@ export function App() {
       <ResultViewer />
       <ForcedSetupGate />
       <DownloadDialog />
+      <PublishTemplateDialog />
     </div>
   );
 }

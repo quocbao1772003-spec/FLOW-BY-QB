@@ -820,6 +820,16 @@ _DEFAULT_HANDLERS: dict[str, Handler] = {
 }
 
 
+def _request_user(rid: int) -> Optional[int]:
+    try:
+        with get_session() as s:
+            req = s.get(Request, rid)
+            uid = (req.params or {}).get("_user_id") if req else None
+            return uid if isinstance(uid, int) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class WorkerController:
     """Single-consumer async queue worker."""
 
@@ -829,6 +839,10 @@ class WorkerController:
         self._shutdown = asyncio.Event()
         self._active = 0
         self._started_at: Optional[float] = None
+        # Server mode: jobs of different Flowboard users run side by side
+        # (each on their own Google accounts / Chrome); one at a time per user.
+        self._user_locks: dict[int, asyncio.Lock] = {}
+        self._tasks: set[asyncio.Task] = set()
 
     # ── enqueue ────────────────────────────────────────────────────────────
     def enqueue(self, request_id: int) -> None:
@@ -843,6 +857,17 @@ class WorkerController:
                 rid = await asyncio.wait_for(self._queue.get(), timeout=0.5)
             except asyncio.TimeoutError:
                 continue
+            uid = _request_user(rid)
+            if uid is None:
+                await self._process_one(rid)
+                continue
+            lock = self._user_locks.setdefault(uid, asyncio.Lock())
+            task = asyncio.create_task(self._run_for_user(lock, rid))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+    async def _run_for_user(self, lock: asyncio.Lock, rid: int) -> None:
+        async with lock:
             await self._process_one(rid)
 
     def request_shutdown(self) -> None:
@@ -907,7 +932,13 @@ class WorkerController:
                 params["__request_id"] = rid
 
             # Release the session during the possibly-long RPC.
-            result, err = await _run_on_accounts(handler, req_type, params)
+            from flowboard.services.users import current_user_id
+
+            utoken = current_user_id.set(params.get("_user_id"))
+            try:
+                result, err = await _run_on_accounts(handler, req_type, params)
+            finally:
+                current_user_id.reset(utoken)
 
             with get_session() as s:
                 req = s.get(Request, rid)

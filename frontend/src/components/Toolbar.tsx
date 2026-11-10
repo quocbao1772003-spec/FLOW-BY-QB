@@ -3,11 +3,16 @@ import { useBoardStore } from "../store/board";
 import { ActivityBell } from "./activity/ActivityBell";
 import { AiProviderBadge } from "./AiProviderBadge";
 import { useAiChatStore } from "../store/aiChat";
+import { usePublishDialog } from "./PublishTemplateDialog";
+import { useSessionStore } from "../store/session";
 
 export function Toolbar() {
   const boardName = useBoardStore((s) => s.boardName);
   const renameBoard = useBoardStore((s) => s.renameBoard);
   const chatOpen = useAiChatStore((s) => s.open);
+  const boardId = useBoardStore((s) => s.boardId);
+  const openPublish = usePublishDialog((s) => s.open);
+  const user = useSessionStore((s) => s.user);
   const toggleChat = useAiChatStore((s) => s.toggle);
 
   const [editing, setEditing] = useState(false);
@@ -39,7 +44,7 @@ export function Toolbar() {
     <div className="toolbar">
       <span className="toolbar-wordmark">Flowboard</span>
       <span className="toolbar-sep" aria-hidden="true">›</span>
-      <span className="toolbar-crumb">Personal</span>
+      <span className="toolbar-crumb">{user ? user.display_name || user.username : "Personal"}</span>
       <span className="toolbar-sep" aria-hidden="true">›</span>
       {editing ? (
         <input
@@ -63,6 +68,19 @@ export function Toolbar() {
       )}
 
       <div className="toolbar-actions">
+        {boardId !== null && (
+          <button
+            className="toolbar-ai-btn"
+            onClick={() => openPublish({ id: boardId, name: boardName || "Untitled" })}
+            title="Đưa flow này vào thư viện mẫu dùng chung"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3l9 5-9 5-9-5 9-5z" />
+              <path d="M3 13l9 5 9-5" />
+            </svg>
+            Thư viện
+          </button>
+        )}
         <ActivityBell />
         <AiProviderBadge />
         <button

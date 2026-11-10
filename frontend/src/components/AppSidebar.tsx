@@ -2,12 +2,16 @@ import { useState, type ReactNode } from "react";
 import { useViewStore, type AppView } from "../store/view";
 import { AccountPanel } from "./AccountPanel";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { UserChip } from "./UserChip";
+import { useSessionStore } from "../store/session";
 import {
   IconFrame,
   IconGridLayout,
   IconImage,
+  IconLayers,
   IconSidebar,
   IconUser,
+  IconUsers,
 } from "../canvas/icons";
 
 // Magnific-style app sidebar: brand on top, primary destinations below
@@ -17,14 +21,23 @@ import {
 const ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [
   { view: "flows", label: "Flows", icon: <IconFrame size={15} /> },
   { view: "imagegen", label: "Image Gen", icon: <IconImage size={15} /> },
+  { view: "templates", label: "Thư viện mẫu", icon: <IconLayers size={15} /> },
   { view: "library", label: "Library", icon: <IconGridLayout size={15} /> },
   { view: "accounts", label: "Tài khoản Flow", icon: <IconUser size={15} /> },
+];
+
+const ADMIN_ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [
+  { view: "team", label: "Nhân viên", icon: <IconUsers size={15} /> },
 ];
 
 const LS_KEY = "flowboard:sidebarCollapsed";
 
 export function AppSidebar() {
   const view = useViewStore((s) => s.view);
+  const user = useSessionStore((s) => s.user);
+  const authRequired = useSessionStore((s) => s.authRequired);
+  // Local single-user app: show "Nhân viên" so the admin can switch login on.
+  const items = !authRequired || user?.role === "admin" ? [...ITEMS, ...ADMIN_ITEMS] : ITEMS;
   const setView = useViewStore((s) => s.setView);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -69,7 +82,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="app-sidebar__nav" aria-label="Main">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <button
             key={item.view}
             type="button"
@@ -85,6 +98,7 @@ export function AppSidebar() {
       </nav>
 
       <div className="app-sidebar__bottom">
+        <UserChip collapsed={collapsed} />
         <AccountSwitcher collapsed={collapsed} />
         <AccountPanel collapsed={collapsed} />
       </div>

@@ -5,8 +5,40 @@
  * Captures Bearer token and proxies API calls through the browser context.
  */
 
-const AGENT_WS_URL  = 'ws://127.0.0.1:9223';
-const CALLBACK_URL  = 'http://127.0.0.1:8101/api/ext/callback';
+// Local app by default. For a Flowboard server (e.g. https://flow.example.com)
+// the popup stores serverUrl + the pairing code from the "Tài khoản Flow" page.
+const LOCAL_WS_URL       = 'ws://127.0.0.1:9223';
+const LOCAL_CALLBACK_URL = 'http://127.0.0.1:8101/api/ext/callback';
+let AGENT_WS_URL  = LOCAL_WS_URL;
+let CALLBACK_URL  = LOCAL_CALLBACK_URL;
+let bridgeConfig  = { serverUrl: '', pairToken: '' };
+
+function normalizeServerUrl(raw) {
+  let u = String(raw || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try {
+    const url = new URL(u);
+    return url.origin;
+  } catch (e) {
+    return '';
+  }
+}
+
+function applyBridgeConfig(cfg) {
+  bridgeConfig = { serverUrl: normalizeServerUrl(cfg && cfg.serverUrl), pairToken: String((cfg && cfg.pairToken) || '').trim() };
+  if (bridgeConfig.serverUrl) {
+    AGENT_WS_URL = bridgeConfig.serverUrl.replace(/^http/i, 'ws') + '/ws/bridge';
+    CALLBACK_URL = bridgeConfig.serverUrl + '/api/ext/callback';
+  } else {
+    AGENT_WS_URL = LOCAL_WS_URL;
+    CALLBACK_URL = LOCAL_CALLBACK_URL;
+  }
+}
+
+const bridgeConfigReady = chrome.storage.local.get(['serverUrl', 'pairToken'])
+  .then(applyBridgeConfig)
+  .catch(() => applyBridgeConfig({}));
 
 let ws               = null;
 let flowKey          = null;
@@ -83,8 +115,10 @@ chrome.runtime.onInstalled.addListener(init);
 chrome.runtime.onStartup.addListener(init);
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'reconnect') connectToAgent();
-  if (alarm.name === 'keepAlive') keepAlive();
+  // The server address is read from storage asynchronously; wait for it so a
+  // woken worker never dials the local default by mistake.
+  if (alarm.name === 'reconnect') bridgeConfigReady.then(() => connectToAgent());
+  if (alarm.name === 'keepAlive') bridgeConfigReady.then(() => keepAlive());
 });
 
 async function init() {
@@ -95,6 +129,7 @@ async function init() {
   // The agent replays user_info on every WS reconnect anyway via
   // fetchAndPushUserInfo(token), so persistence buys nothing.
   const data = await chrome.storage.local.get(['flowKey', 'metrics']);
+  await bridgeConfigReady;
   await getBridgeInstanceId();
   if (data.flowKey)        flowKey        = data.flowKey;
   if (data.metrics)        Object.assign(metrics, data.metrics);
@@ -183,7 +218,9 @@ function connectToAgent(force = false) {
   try {
     ws = new WebSocket(AGENT_WS_URL);
   } catch (e) {
-    metrics.lastError = 'Không kết nối được app local. Hãy mở MO-APP.bat (cổng 9223).';
+    metrics.lastError = AGENT_WS_URL.startsWith('ws://127.0.0.1')
+      ? 'Không kết nối được app local. Hãy mở MO-APP.bat (cổng 9223).'
+      : 'Không kết nối được server Flowboard ' + AGENT_WS_URL;
     setState('off');
     scheduleReconnect();
     return;
@@ -198,8 +235,10 @@ function connectToAgent(force = false) {
       // A suspended MV3 worker may wake on an alarm, without onStartup/init.
       const instanceId = await getBridgeInstanceId();
       if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
-      socket.send(JSON.stringify({ type: 'bridge_hello', protocol: 2,
-        instanceId, version: chrome.runtime.getManifest().version }));
+      const hello = { type: 'bridge_hello', protocol: 2,
+        instanceId, version: chrome.runtime.getManifest().version };
+      if (typeof bridgeConfig !== 'undefined' && bridgeConfig.pairToken) hello.pairToken = bridgeConfig.pairToken;
+      socket.send(JSON.stringify(hello));
     } catch (error) {
       metrics.lastError = 'Không đọc được mã profile extension. Hãy reload extension.';
       socket.close();
@@ -251,9 +290,11 @@ function connectToAgent(force = false) {
       if (msg.type === 'bridge_rejected') {
         bridgeAccepted = false;
         callbackSecret = null;
-        metrics.lastError = msg.error === 'ANOTHER_PROFILE_SELECTED'
-          ? 'App đang dùng profile Chrome khác. Muốn đổi profile: Disconnect profile cũ, khởi động lại agent rồi Reconnect ở đây.'
-          : 'Cần cập nhật Flowboard Bridge trong profile Chrome này lên bản mới.';
+        metrics.lastError = msg.error === 'PAIRING_REQUIRED'
+          ? 'Server cần mã ghép nối. Vào Flowboard > Tài khoản Flow > Kết nối Chrome, lấy mã rồi dán vào ô Mã ghép nối ở đây.'
+          : msg.error === 'ANOTHER_PROFILE_SELECTED'
+            ? 'App đang dùng profile Chrome khác. Muốn đổi profile: Disconnect profile cũ, khởi động lại agent rồi Reconnect ở đây.'
+            : 'Cần cập nhật Flowboard Bridge trong profile Chrome này lên bản mới.';
         chrome.storage.local.set({ metrics });
         setState('off');
       } else if (msg.type === 'callback_secret') {
@@ -2410,6 +2451,8 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
       connected:       bridgeAccepted && ws?.readyState === WebSocket.OPEN,
       flowKeyPresent:  !!flowKey,
       manualDisconnect,
+      serverUrl:       bridgeConfig.serverUrl,
+      paired:          !!bridgeConfig.pairToken,
       tokenAge:        metrics.tokenCapturedAt ? Date.now() - metrics.tokenCapturedAt : null,
       metrics: {
         requestCount: metrics.requestCount,
@@ -2418,6 +2461,24 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
         lastError:    metrics.lastError,
       },
       state,
+    });
+    return true;
+  }
+
+  if (msg.type === 'SET_SERVER') {
+    const cfg = { serverUrl: normalizeServerUrl(msg.serverUrl), pairToken: String(msg.pairToken || '').trim() };
+    if (!cfg.pairToken && msg.keepToken) cfg.pairToken = bridgeConfig.pairToken;
+    chrome.storage.local.set(cfg).then(() => {
+      applyBridgeConfig(cfg);
+      metrics.lastError = null;
+      manualDisconnect = false;
+      reconnectAttempts = 0;
+      reconnectAt = 0;
+      chrome.alarms.clear('reconnect');
+      try { ws?.close(); } catch (e) { /* ignore */ }
+      ws = null;
+      connectToAgent(true);
+      reply({ ok: true, serverUrl: cfg.serverUrl });
     });
     return true;
   }

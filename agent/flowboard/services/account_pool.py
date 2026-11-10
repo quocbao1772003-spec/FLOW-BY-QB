@@ -91,6 +91,7 @@ class AccountPool:
             "labels": {},            # instance_id -> last known email
             "primary": None,         # first account ever seen (owns legacy projects)
             "events": [],            # recent automatic switches, newest last
+            "users": {},             # Flowboard user id -> {"selected", "auto_rotate"}
         }
         self._load()
 
@@ -123,6 +124,31 @@ class AccountPool:
             tmp.replace(p)
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not save accounts.json: %s", exc)
+
+    # ── Flowboard users (server mode) ─────────────────────────────────────
+    # Each Chrome profile is paired with one Flowboard user; a user's jobs
+    # only ever run on that user's own Google Flow accounts.
+    @staticmethod
+    def _uid() -> Optional[int]:
+        from flowboard.services.users import current_user_id
+
+        return current_user_id.get()
+
+    def _prefs(self) -> dict:
+        uid = self._uid()
+        if uid is None:
+            return self._state
+        return self._state.setdefault("users", {}).setdefault(
+            str(uid), {"selected": None, "auto_rotate": True}
+        )
+
+    @staticmethod
+    def owner_of(client: Any) -> Optional[int]:
+        return getattr(client, "_owner_user_id", None)
+
+    def _visible(self, client: Any) -> bool:
+        uid = self._uid()
+        return uid is None or self.owner_of(client) == uid
 
     # ── identity ──────────────────────────────────────────────────────────
     def key_of(self, client: Any) -> str:
@@ -162,7 +188,8 @@ class AccountPool:
         return self._state.get("primary")
 
     # ── bridge lifecycle (called by ws_server) ────────────────────────────
-    def attach(self, ws: Any, instance_id: str, version: Optional[str]) -> Any:
+    def attach(self, ws: Any, instance_id: str, version: Optional[str],
+               owner_user_id: Optional[int] = None) -> Any:
         with self._lock:
             client = self._clients.get(instance_id)
             if client is None:
@@ -174,6 +201,7 @@ class AccountPool:
                 # socket fail and are retried by their callers.
                 client.clear_extension()
             client._extension_instance = instance_id
+            client._owner_user_id = owner_user_id
             if not client.set_extension(ws, instance_id=instance_id, version=version):
                 return None
             if instance_id in self._connected_order:
@@ -219,7 +247,8 @@ class AccountPool:
     def connected_clients(self) -> list[Any]:
         with self._lock:
             out = [self._clients[i] for i in self._connected_order
-                   if i in self._clients and self._clients[i].connected]
+                   if i in self._clients and self._clients[i].connected
+                   and self._visible(self._clients[i])]
         order = self._state.get("order") or []
 
         def rank(c):
@@ -254,11 +283,12 @@ class AccountPool:
         known = [c for c in conn if self.identified(c)]
         if known:
             conn = known
-        sel = self._state.get("selected")
+        prefs = self._prefs()
+        sel = prefs.get("selected")
         chosen = next((c for c in conn if self.key_of(c) == sel), None)
-        if chosen is not None and (not self._state.get("auto_rotate") or self.is_available(chosen, now)):
+        if chosen is not None and (not prefs.get("auto_rotate", True) or self.is_available(chosen, now)):
             return chosen
-        if not self._state.get("auto_rotate"):
+        if not prefs.get("auto_rotate", True):
             return chosen or conn[0]
         fresh = [c for c in conn if self.is_available(c, now)]
         if fresh:
@@ -281,7 +311,7 @@ class AccountPool:
 
     def next_account(self, exclude: set[str]) -> Optional[Any]:
         """A connected account not in ``exclude`` that still has quota."""
-        if not self._state.get("auto_rotate"):
+        if not self._prefs().get("auto_rotate", True):
             return None
         now = time.time()
         for c in self.connected_clients():
@@ -349,12 +379,12 @@ class AccountPool:
 
     def select(self, key: Optional[str]) -> None:
         with self._lock:
-            self._state["selected"] = key.lower() if key else None
+            self._prefs()["selected"] = key.lower() if key else None
             self._save()
 
     def set_auto_rotate(self, on: bool) -> None:
         with self._lock:
-            self._state["auto_rotate"] = bool(on)
+            self._prefs()["auto_rotate"] = bool(on)
             self._save()
 
     def set_order(self, keys: list[str]) -> None:
@@ -366,17 +396,22 @@ class AccountPool:
 
     @property
     def auto_rotate(self) -> bool:
-        return bool(self._state.get("auto_rotate"))
+        return bool(self._prefs().get("auto_rotate", True))
 
     # ── reporting ─────────────────────────────────────────────────────────
-    def snapshot(self) -> dict:
+    def snapshot(self, all_users: bool = False) -> dict:
+        """Accounts the current Flowboard user can use (``all_users``: every
+        paired profile, for the admin overview)."""
         now = time.time()
+        prefs = self._prefs()
         current = self.current()
         cur_key = self.key_of(current) if current is not self._idle else None
         rows: dict[str, dict] = {}
         with self._lock:
             clients = dict(self._clients)
         for inst, c in clients.items():
+            if not all_users and not self._visible(c):
+                continue
             key = self.key_of(c)
             ex = self._exhausted(key, now)
             row = rows.get(key)
@@ -392,7 +427,8 @@ class AccountPool:
                 "identified": not key.startswith("profile:"),
                 "instance": inst[:8],
                 "active": key == cur_key,
-                "selected": key == self._state.get("selected"),
+                "selected": key == prefs.get("selected"),
+                "owner_user_id": self.owner_of(c),
                 "primary": key == self._state.get("primary"),
                 "exhausted": bool(ex),
                 "exhausted_reason": (ex or {}).get("reason"),
@@ -405,13 +441,16 @@ class AccountPool:
         order = self._state.get("order") or []
         listed = sorted(rows.values(), key=lambda r: (not r["connected"],
                                                      order.index(r["key"]) if r["key"] in order else 999))
+        mine = set(rows)
+        events = [e for e in reversed(self._state.get("events") or [])
+                  if all_users or e.get("from") in mine or e.get("to") in mine]
         return {
             "auto_rotate": self.auto_rotate,
-            "selected": self._state.get("selected"),
+            "selected": prefs.get("selected"),
             "active": cur_key,
             "primary": self._state.get("primary"),
             "accounts": listed,
-            "events": list(reversed(self._state.get("events") or []))[:20],
+            "events": events[:20],
         }
 
     # test helper
@@ -420,7 +459,8 @@ class AccountPool:
             self._clients.clear()
             self._connected_order.clear()
             self._state.update({"auto_rotate": True, "selected": None, "order": [],
-                                "exhausted": {}, "labels": {}, "primary": None, "events": []})
+                                "exhausted": {}, "labels": {}, "primary": None, "events": [],
+                                "users": {}})
 
 
 class FlowClientProxy:

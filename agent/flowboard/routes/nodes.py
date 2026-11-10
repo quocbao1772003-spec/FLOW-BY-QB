@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from flowboard.db import get_session
+from flowboard.services import access
 from flowboard.db.models import Asset, Board, Edge, Node, Request
 from flowboard.short_id import generate_unique_short_id
 
@@ -55,6 +56,7 @@ class NodeUpdate(BaseModel):
 
 @router.post("")
 def create_node(body: NodeCreate):
+    access.require_board(body.board_id)
     with get_session() as s:
         if not s.get(Board, body.board_id):
             raise HTTPException(404, "board not found")
@@ -78,6 +80,7 @@ def create_node(body: NodeCreate):
 
 @router.get("/{node_id}")
 def get_node(node_id: int):
+    access.require_node(node_id)
     with get_session() as s:
         node = s.get(Node, node_id)
         if not node:
@@ -112,6 +115,7 @@ def update_node(node_id: int, body: NodeUpdate):
     Non-`data` fields (`x`, `y`, `w`, `h`, `status`) keep the original
     setattr-replace semantic — no merge applied.
     """
+    access.require_node(node_id)
     with get_session() as s:
         node = s.get(Node, node_id)
         if not node:
@@ -152,6 +156,7 @@ def delete_node(node_id: int):
     locally (optimistic via applyNodeChanges) but reload restored it
     because the backend never actually deleted it.
     """
+    access.require_node(node_id)
     with get_session() as s:
         node = s.get(Node, node_id)
         if not node:

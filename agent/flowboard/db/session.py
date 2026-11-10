@@ -50,6 +50,13 @@ def init_db() -> None:
                 )
                 conn.commit()
 
+        # Board.owner_user_id — added with Flowboard user accounts.
+        if insp.has_table("board"):
+            board_cols = {c["name"] for c in insp.get_columns("board")}
+            if "owner_user_id" not in board_cols:
+                conn.exec_driver_sql("ALTER TABLE board ADD COLUMN owner_user_id INTEGER")
+                conn.commit()
+
     SQLModel.metadata.create_all(engine)
 
 

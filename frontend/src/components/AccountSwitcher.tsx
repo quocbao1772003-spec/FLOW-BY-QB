@@ -42,7 +42,7 @@ export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) 
   if (!snap) return null;
   const live = snap.accounts.filter((a) => a.connected);
   const ready = live.filter((a) => !a.exhausted && a.identified !== false).length;
-  const title = live.length === 0 ? "Chưa có tài khoản" : `${live.length} tài khoản`;
+  const title = `${live.length} tài khoản`;
   const sub = live.length <= 1 ? "Thêm tài khoản" : `${ready} còn lượt`;
 
   return (

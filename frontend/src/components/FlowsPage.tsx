@@ -1,8 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../store/board";
 import { useViewStore } from "../store/view";
 import { IconPlus, IconTrash, IconDownload, IconUpload } from "../canvas/icons";
 import { downloadFlow, importFlow } from "../lib/flowIO";
+import { listBoards, mediaUrl, type Board } from "../api/client";
+import { usePublishDialog } from "./PublishTemplateDialog";
+import { useSessionStore } from "../store/session";
 
 // "Flows" page — Magnific Spaces-style gallery of boards. Click a card
 // to open that flow on the canvas; + New flow creates one.
@@ -29,6 +32,21 @@ export function FlowsPage() {
   const refreshBoardList = useBoardStore((s) => s.refreshBoardList);
   const [busy, setBusy] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const openPublish = usePublishDialog((s) => s.open);
+  const user = useSessionStore((s) => s.user);
+  const isAdmin = user?.role === "admin";
+  const [showAll, setShowAll] = useState(false);
+  const [everyone, setEveryone] = useState<Board[] | null>(null);
+
+  // Refresh list (covers) when the page opens; admins may view every flow.
+  useEffect(() => {
+    void refreshBoardList();
+  }, [refreshBoardList]);
+  useEffect(() => {
+    if (!showAll) return;
+    void listBoards(true).then(setEveryone).catch(() => setEveryone(null));
+  }, [showAll, boards]);
+  const shown: Board[] = showAll && everyone ? everyone : boards;
 
   async function openFlow(id: number) {
     if (id !== boardId) await switchBoard(id);
@@ -75,6 +93,17 @@ export function FlowsPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          {isAdmin && (
+            <button
+              type="button"
+              className={`footer-tab${showAll ? " footer-tab--active" : ""}`}
+              onClick={() => setShowAll((v) => !v)}
+              title="Xem flow của mọi nhân viên"
+              style={{ padding: "8px 14px" }}
+            >
+              {showAll ? "Tất cả nhân viên" : "Của tôi"}
+            </button>
+          )}
           <button
             type="button"
             className="footer-tab"
@@ -103,7 +132,7 @@ export function FlowsPage() {
       </div>
 
       <div className="flows-grid">
-        {boards.map((b) => (
+        {shown.map((b) => (
           <div
             key={b.id}
             className={`flow-card${b.id === boardId ? " flow-card--active" : ""}`}
@@ -115,13 +144,35 @@ export function FlowsPage() {
             }}
           >
             <div className="flow-card__thumb" aria-hidden="true">
-              <span className="flow-card__thumb-glyph">⌬</span>
+              {b.cover_media_id ? (
+                <img className="flow-card__cover" src={mediaUrl(b.cover_media_id)} alt="" loading="lazy" draggable={false} />
+              ) : (
+                <span className="flow-card__thumb-glyph">⌬</span>
+              )}
             </div>
             <div className="flow-card__meta">
               <span className="flow-card__name">{b.name || "Untitled"}</span>
-              <span className="flow-card__date">{formatDate(b.created_at)}</span>
+              <span className="flow-card__date">
+                {showAll && b.owner_name ? `${b.owner_name} · ` : ""}
+                {formatDate(b.created_at)}
+              </span>
             </div>
             <div className="flow-card__actions">
+              <button
+                type="button"
+                className="flow-card__action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openPublish({ id: b.id, name: b.name || "Untitled" });
+                }}
+                title="Đưa vào thư viện mẫu"
+                aria-label={`Publish ${b.name}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3l9 5-9 5-9-5 9-5z" />
+                  <path d="M3 13l9 5 9-5" />
+                </svg>
+              </button>
               <button
                 type="button"
                 className="flow-card__action"

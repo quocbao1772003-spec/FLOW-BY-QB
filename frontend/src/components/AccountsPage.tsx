@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { IconRefresh } from "../canvas/icons";
+import { ChromePairing } from "./ChromePairing";
+import { useSessionStore } from "../store/session";
 
 // "Tài khoản Flow" tab — every Google Flow account connected through a
 // Chrome profile (agent: services/account_pool.py, routes/accounts.py).
@@ -79,6 +81,7 @@ function statusOf(a: FlowAccountRow): { label: string; tone: "on" | "ready" | "s
 }
 
 export function AccountsPage() {
+  const authRequired = useSessionStore((s) => s.authRequired);
   const [data, setData] = useState<AccountsData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -328,6 +331,8 @@ export function AccountsPage() {
         </p>
       )}
 
+      <ChromePairing />
+
       <div className="accounts-section__head">
         <h2 className="accounts-section__title">Thêm tài khoản</h2>
       </div>
@@ -344,9 +349,25 @@ export function AccountsPage() {
           <span className="accounts-step__num">2</span>
           <span className="accounts-step__title">Cài extension</span>
           <span className="accounts-step__text">
-            Mở <code>chrome://extensions</code>, bật Developer mode, bấm Load unpacked và chọn thư mục:
+            {authRequired ? (
+              <>
+                Tải extension về, giải nén. Mở <code>chrome://extensions</code>, bật Developer mode, bấm Load
+                unpacked và chọn thư mục vừa giải nén. Sau đó mở popup extension, điền Server và Mã ghép nối ở
+                mục Kết nối Chrome phía trên.
+              </>
+            ) : (
+              <>
+                Mở <code>chrome://extensions</code>, bật Developer mode, bấm Load unpacked và chọn thư mục:
+              </>
+            )}
           </span>
-          {data?.extension_dir && (
+          {authRequired && (
+            <a className="accounts-path" href="/api/accounts/extension.zip" download>
+              <span>flowboard-bridge.zip</span>
+              <em>Tải</em>
+            </a>
+          )}
+          {!authRequired && data?.extension_dir && (
             <button
               type="button"
               className="accounts-path"

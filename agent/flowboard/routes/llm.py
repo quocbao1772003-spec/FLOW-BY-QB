@@ -20,16 +20,17 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from flowboard.services.llm import registry, secrets
 from flowboard.services.llm.base import LLMError
-from flowboard.services import claude_cli
+from flowboard.services import access, claude_cli
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
+_admin_only = [Depends(access.require_admin)]
 
 
 # ── request/response models ───────────────────────────────────────────
@@ -57,7 +58,7 @@ _VALID_FEATURES = ("auto_prompt", "vision", "planner")
 # ── GET /api/llm/providers ────────────────────────────────────────────
 
 
-@router.post("/debug/reset-probe")
+@router.post("/debug/reset-probe", dependencies=_admin_only)
 async def debug_reset_probe() -> dict:
     """Force re-probe Claude CLI (debug endpoint)."""
     claude_cli.reset_availability_cache()
@@ -108,7 +109,7 @@ async def list_providers() -> list[dict]:
 # ── PUT /api/llm/providers/{name} ─────────────────────────────────────
 
 
-@router.put("/providers/{name}")
+@router.put("/providers/{name}", dependencies=_admin_only)
 async def set_provider_key(name: str, body: _ApiKeyBody) -> dict:
     """Save (or clear, when `apiKey: null`) a provider's API key.
 
@@ -200,7 +201,7 @@ def get_config() -> dict:
 # ── PUT /api/llm/config ───────────────────────────────────────────────
 
 
-@router.put("/config")
+@router.put("/config", dependencies=_admin_only)
 def set_config(body: _ConfigBody) -> dict:
     """Update one or more feature → provider assignments.
 

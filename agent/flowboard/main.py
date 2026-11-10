@@ -11,6 +11,10 @@ from flowboard.db.models import Request
 from flowboard.routes import activity, ai_chat, assets, assistant, auth, boards, chat, edges, flow_projects, llm, media, nodes, plans, projects, prompt, upload, upscale, vision
 from flowboard.routes import sync as sync_route
 from flowboard.routes import accounts as accounts_route
+from flowboard.routes import session as session_route
+from flowboard.routes import users as users_route
+from flowboard.routes import templates as templates_route
+from flowboard.services import users as users_svc
 from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
@@ -55,6 +59,7 @@ def _recover_orphan_running_requests() -> int:
 async def lifespan(app: FastAPI):
     reset_image_project_session()
     init_db()
+    users_svc.ensure_bootstrap_admin()
     recovered = _recover_orphan_running_requests()
     if recovered:
         logger.info("recovered %d orphan running request(s) → failed", recovered)
@@ -114,14 +119,79 @@ class _McpLiveSync:
             sync_state.bump()
 
 
+# ── Login (server mode) ───────────────────────────────────────────────────
+# Open while no Flowboard user exists (single-user local app). Once the
+# first admin is created every API, media file and the extension bridge
+# need a session cookie or a personal API token.
+_AUTH_OPEN = {
+    "/api/health",
+    "/api/session",
+    "/api/session/login",
+    "/api/session/logout",
+    "/api/ext/callback",  # authenticated by the per-bridge callback secret
+}
+
+
+class _AuthGate:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        protected = path.startswith(("/api/", "/media/"))
+        user = None
+        if protected or path == "/api/session":
+            headers = {k.lower(): v for k, v in scope.get("headers", [])}
+            auth = headers.get(b"authorization", b"").decode("latin-1")
+            if auth.lower().startswith("bearer "):
+                user = users_svc.user_for_token(auth[7:].strip(), "api")
+            if user is None:
+                cookie = headers.get(b"cookie", b"").decode("latin-1")
+                for part in cookie.split(";"):
+                    name, _, value = part.strip().partition("=")
+                    if name == users_svc.SESSION_COOKIE and value:
+                        user = users_svc.user_for_session(value)
+                        break
+        if (
+            protected
+            and scope.get("method") != "OPTIONS"
+            and path not in _AUTH_OPEN
+            and user is None
+            and users_svc.auth_enabled()
+        ):
+            body = b'{"detail":"login_required"}'
+            await send({"type": "http.response.start", "status": 401,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        token = users_svc.current_user_id.set(user.id if user else None)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            users_svc.current_user_id.reset(token)
+
+
+import os as _os  # noqa: E402
+
+_EXTRA_ORIGINS = [o.strip() for o in _os.getenv("FLOWBOARD_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Same-origin in production (the agent serves the UI); the Vite dev
+    # server proxies /api. Only local dev origins + configured ones may
+    # make credentialed cross-origin calls.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=_EXTRA_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_middleware(_McpLiveSync)
+app.add_middleware(_AuthGate)
 
 app.include_router(boards.router)
 app.include_router(nodes.router)
@@ -146,6 +216,19 @@ app.include_router(upscale.router)
 app.include_router(ai_chat.router)
 app.include_router(sync_route.router)
 app.include_router(accounts_route.router)
+app.include_router(session_route.router)
+app.include_router(users_route.router)
+app.include_router(templates_route.router)
+
+
+from fastapi import WebSocket as _WebSocket  # noqa: E402
+
+
+@app.websocket("/ws/bridge")
+async def bridge_socket(websocket: _WebSocket) -> None:
+    from flowboard.services.ws_server import serve_starlette
+
+    await serve_starlette(websocket)
 
 
 @app.get("/api/health")
@@ -183,3 +266,29 @@ async def ext_callback(
     if matched is None:
         raise HTTPException(status_code=401, detail="invalid callback secret")
     return {"ok": matched}
+
+
+# ── Built web UI (server deploys) ─────────────────────────────────────────
+# `npx vite build` in frontend/ produces frontend/dist; when it exists the
+# agent serves the UI itself, so one container / one Cloudflare hostname
+# carries UI, API, media and the extension bridge (/ws/bridge). Local dev
+# keeps using the Vite dev server on :5173.
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
+
+from flowboard.config import ROOT as _ROOT  # noqa: E402
+
+_UI_DIST = _Path(_os.getenv("FLOWBOARD_FRONTEND_DIST", str(_ROOT / "frontend" / "dist")))
+
+if (_UI_DIST / "index.html").is_file():
+    _UI_ROOT = _UI_DIST.resolve()
+
+    @app.get("/{ui_path:path}", include_in_schema=False)
+    def _web_ui(ui_path: str):
+        if ui_path.startswith(("api/", "media/", "ws/")):
+            raise HTTPException(404, "not found")
+        target = (_UI_ROOT / ui_path).resolve()
+        if ui_path and target.is_file() and _UI_ROOT in target.parents:
+            return _FileResponse(str(target))
+        return _FileResponse(str(_UI_ROOT / "index.html"), headers={"Cache-Control": "no-cache"})

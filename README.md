@@ -69,6 +69,13 @@ Chạy `MCP-CAI-DAT.bat` để Claude Desktop, Claude Code, Codex điều khiể
 
 Mỗi Chrome profile có extension là một tài khoản. Hết lượt ảnh trong ngày thì Flowboard tự chuyển sang tài khoản kế tiếp. Hướng dẫn: [docs/NHIEU-TAI-KHOAN.md](docs/NHIEU-TAI-KHOAN.md).
 
+### Tài khoản nhân viên, thư viện mẫu, chạy trên server
+
+- Admin cấp tài khoản Flowboard cho từng nhân viên ở trang **Nhân viên**.
+- Mỗi người có flow riêng và nối Chrome profile của mình bằng mã ghép nối. Lệnh của ai chạy trên tài khoản Google Flow của người đó.
+- **Thư viện mẫu**: đưa flow vào thư viện, người khác bấm Use để có bản sao riêng.
+- Đưa lên server (Hetzner + Cloudflare Tunnel) bằng `docker compose`. Hướng dẫn: [docs/SERVER.md](docs/SERVER.md).
+
 ## Kiến trúc
 
 ```

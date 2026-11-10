@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from flowboard.db import get_session
+from flowboard.services import access
 from flowboard.db.models import Edge, Node
 
 router = APIRouter(prefix="/api/edges", tags=["edges"])
@@ -30,6 +31,7 @@ class EdgePatch(BaseModel):
 
 @router.post("")
 def create_edge(body: EdgeCreate):
+    access.require_board(body.board_id)
     with get_session() as s:
         if body.source_id == body.target_id:
             raise HTTPException(400, "source_id and target_id must differ")
@@ -61,6 +63,7 @@ def patch_edge(edge_id: int, body: EdgePatch):
     so the next Generate uses the chosen ref. Passing
     ``source_variant_idx: null`` clears the pin (revert to mediaId).
     """
+    access.require_edge(edge_id)
     with get_session() as s:
         edge = s.get(Edge, edge_id)
         if not edge:
@@ -77,6 +80,7 @@ def patch_edge(edge_id: int, body: EdgePatch):
 
 @router.delete("/{edge_id}")
 def delete_edge(edge_id: int):
+    access.require_edge(edge_id)
     with get_session() as s:
         edge = s.get(Edge, edge_id)
         if not edge:

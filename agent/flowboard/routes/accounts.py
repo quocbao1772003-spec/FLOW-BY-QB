@@ -1,7 +1,13 @@
 """Google Flow accounts connected through Chrome profiles (see account_pool.py)."""
 from typing import Optional
 
+import io
+import json
+import zipfile
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from flowboard.services.flow_client import account_pool
@@ -13,6 +19,32 @@ def _extension_dir() -> str:
     from flowboard.config import ROOT
 
     return str(ROOT / "extension")
+
+
+@router.get("/extension.zip")
+def extension_zip() -> Response:
+    """The Flowboard Bridge extension as a zip, for staff installing it from
+    the team server (unzip, then Load unpacked)."""
+    root = Path(_extension_dir())
+    manifest = root / "manifest.json"
+    if not manifest.is_file():
+        raise HTTPException(404, "extension folder not found on this server")
+    version = json.loads(manifest.read_text(encoding="utf-8")).get("version", "")
+    folder = f"flowboard-bridge-{version}" if version else "flowboard-bridge"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(root.rglob("*")):
+            rel = f.relative_to(root)
+            if not f.is_file() or rel.parts[0] in ("test", "tests", "node_modules", "_metadata") or f.name.startswith((".", "_")):
+                continue
+            if f.suffix in (".md",) or f.name in ("package.json", "package-lock.json"):
+                continue
+            zf.write(f, f"{folder}/{rel.as_posix()}")
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{folder}.zip"'},
+    )
 
 
 _GEN_TYPES = {"gen_image", "edit_image", "gen_video", "gen_video_omni"}

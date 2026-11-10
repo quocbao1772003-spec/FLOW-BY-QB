@@ -1649,3 +1649,615 @@ a.account-panel__version-link:hover code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Login ──────────────────────────────────────────────────────────────── */
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(var(--accent-rgb), 0.14), transparent 70%),
+    var(--surface-0);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px 28px 28px;
+  border-radius: 22px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-1);
+  box-shadow: var(--glass-shadow);
+}
+
+.login-card__logo {
+  align-self: center;
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+
+.login-card__title {
+  margin: 0;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--fg-0);
+}
+
+.login-card__sub {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+
+.login-card__label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.login-card__input,
+.team-form input,
+.team-form select,
+.tpl-dialog__input,
+.templates-search,
+.pair-box__input,
+.user-chip__pw input {
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-alpha-1);
+  background: var(--surface-0);
+  color: var(--fg-0);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.login-card__input:focus,
+.team-form input:focus,
+.team-form select:focus,
+.tpl-dialog__input:focus,
+.templates-search:focus,
+.pair-box__input:focus,
+.user-chip__pw input:focus {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
+}
+
+.login-card__error {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--error);
+}
+
+.login-card__submit {
+  margin-top: 12px;
+  height: 40px;
+  justify-content: center;
+}
+
+/* ── Signed-in user (rail footer) ──────────────────────────────────────── */
+
+.user-chip {
+  position: relative;
+  padding: 2px 2px 0;
+}
+
+.user-chip__btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-chip__btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border-alpha-1);
+}
+
+.user-chip--collapsed .user-chip__btn {
+  justify-content: center;
+  padding: 6px 4px;
+}
+
+.user-chip__avatar {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent-gloss);
+}
+
+.user-chip__who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.user-chip__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-chip__role {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--fg-3);
+}
+
+.user-chip__menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 60;
+  width: 240px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.user-chip__item {
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-chip__item:hover {
+  background: var(--surface-3);
+}
+
+.user-chip__item--danger {
+  color: var(--error);
+}
+
+.user-chip__pw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+
+.user-chip__msg {
+  font-size: 11.5px;
+  color: var(--fg-2);
+}
+
+/* ── Team (admin) ──────────────────────────────────────────────────────── */
+
+.team-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 140px auto;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.team-form .page__cta {
+  height: 38px;
+  justify-content: center;
+}
+
+.team-secret {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px 8px 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--accent-tint);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  font-size: 13px;
+  color: var(--fg-1);
+}
+
+.team-secret code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent-soft);
+  user-select: all;
+}
+
+.team-secret__note {
+  flex: 1;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.team-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 96px 96px auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+}
+
+.team-row--off {
+  opacity: 0.55;
+}
+
+.team-row__flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 52px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.team-row__flow b {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.team-row__flow span {
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--fg-3);
+  text-align: center;
+}
+
+.team-row__actions {
+  display: grid;
+  grid-template-columns: repeat(3, 128px);
+  gap: 6px;
+}
+
+.accounts-btn--danger {
+  color: var(--error);
+}
+
+.accounts-btn--danger:hover:not(:disabled) {
+  border-color: rgba(255, 103, 103, 0.5);
+  color: var(--error);
+}
+
+/* ── Chrome pairing ────────────────────────────────────────────────────── */
+
+.pair-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  margin-bottom: 32px;
+  border-radius: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+}
+
+.pair-box__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-2);
+}
+
+.pair-box__text b {
+  color: var(--fg-0);
+}
+
+.pair-box__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pair-box__row .accounts-path {
+  flex: 1;
+  max-width: 460px;
+}
+
+.pair-box__label {
+  flex-shrink: 0;
+  width: 64px;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.pair-box__input {
+  flex: 1;
+  max-width: 300px;
+  height: 34px;
+}
+
+.pair-box__row .page__cta {
+  height: 34px;
+}
+
+.pair-box .team-secret {
+  margin: 0;
+}
+
+.pair-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-alpha-0);
+}
+
+.pair-list__row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 110px 240px 96px;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+
+.pair-list__row + .pair-list__row {
+  border-top: 1px solid var(--border-alpha-0);
+}
+
+.pair-list__row .account-tag {
+  justify-content: center;
+}
+
+.pair-list__label {
+  color: var(--fg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pair-list__hint {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+.pair-list__used {
+  font-size: 11.5px;
+  color: var(--fg-4);
+}
+
+/* ── Templates ─────────────────────────────────────────────────────────── */
+
+.templates-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.templates-search {
+  width: 240px;
+  height: 34px;
+}
+
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border-alpha-0);
+  transition: border-color 140ms ease;
+}
+
+.tpl-card:hover {
+  border-color: var(--border-alpha-2);
+}
+
+.tpl-card__thumb {
+  position: relative;
+  height: 170px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+}
+
+.tpl-card__thumb img,
+.flow-card__cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tpl-card__count {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--fg-1);
+  background: rgba(12, 11, 14, 0.72);
+}
+
+.tpl-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 0;
+  min-width: 0;
+}
+
+.tpl-card__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tpl-card__desc {
+  font-size: 12px;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tpl-card__meta {
+  font-size: 11.5px;
+  color: var(--fg-4);
+}
+
+.tpl-card__actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+
+.tpl-card__use {
+  flex: 1;
+  height: 34px;
+  justify-content: center;
+}
+
+.tpl-card__actions .accounts-btn {
+  height: 34px;
+}
+
+.tpl-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.tpl-dialog {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--surface-modal);
+  border: 1px solid var(--border-alpha-1);
+  box-shadow: var(--glass-shadow);
+}
+
+.tpl-dialog__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--fg-0);
+}
+
+.tpl-dialog__sub {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-3);
+}
+
+.tpl-dialog__label {
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.tpl-dialog__textarea {
+  height: 84px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.tpl-dialog__meta,
+.tpl-dialog__msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.tpl-dialog__msg {
+  color: var(--accent-soft);
+}
+
+.tpl-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tpl-dialog__actions .page__cta,
+.tpl-dialog__actions .accounts-btn {
+  height: 36px;
+}
+
+.tpl-dialog__spacer {
+  flex: 1;
+}
+
+@media (max-width: 1100px) {
+  .team-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-row {
+    grid-template-columns: 44px minmax(0, 1fr) 96px 96px;
+  }
+
+  .team-row__actions {
+    grid-column: 2 / -1;
+  }
+
+  .pair-list__row {
+    grid-template-columns: 70px minmax(0, 1fr) 110px 96px;
+  }
+
+  .pair-list__used {
+    display: none;
+  }
+}

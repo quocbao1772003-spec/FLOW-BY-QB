@@ -16,6 +16,9 @@ except ImportError:  # pragma: no cover
     _ToolError = RuntimeError  # type: ignore[misc,assignment]
 
 AGENT_URL = os.getenv("FLOWBOARD_URL", "http://127.0.0.1:8101").rstrip("/")
+# Personal MCP token (fbt_…) from the "Kết nối Chrome" box. Needed once the
+# Flowboard has user accounts (always the case on a team server).
+AGENT_TOKEN = os.getenv("FLOWBOARD_TOKEN", "").strip()
 
 
 class FlowboardError(_ToolError):
@@ -24,8 +27,10 @@ class FlowboardError(_ToolError):
 
 
 class FlowboardClient:
-    def __init__(self, base_url: str = AGENT_URL, timeout: float = 180.0) -> None:
+    def __init__(self, base_url: str = AGENT_URL, timeout: float = 180.0,
+                 token: str = AGENT_TOKEN) -> None:
         self.base_url = base_url
+        self._token = token
         self._timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -34,7 +39,10 @@ class FlowboardClient:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self._timeout,
-                headers={"X-Flowboard-Source": "mcp"},
+                headers={
+                    "X-Flowboard-Source": "mcp",
+                    **({"Authorization": f"Bearer {self._token}"} if self._token else {}),
+                },
             )
         return self._client
 
@@ -64,6 +72,12 @@ class FlowboardClient:
             ) from exc
         except httpx.TimeoutException as exc:
             raise FlowboardError(f"Flowboard agent không phản hồi kịp ({method} {path}).") from exc
+        if resp.status_code == 401:
+            raise FlowboardError(
+                "Flowboard yêu cầu đăng nhập. Tạo token MCP ở trang Tài khoản Flow → Kết nối Chrome "
+                "rồi đặt biến môi trường FLOWBOARD_TOKEN (hoặc chạy lại: python -m flowboard_mcp "
+                "install --server <URL> --token <fbt_...>)."
+            )
         if resp.status_code >= 400:
             try:
                 detail = resp.json()

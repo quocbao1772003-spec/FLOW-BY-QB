@@ -6,7 +6,9 @@ import { create } from "zustand";
 //   imagegen — standalone single-image generator
 //   library  — all generated/uploaded media
 //   accounts — Google Flow accounts (Chrome profiles) and auto switching
-export type AppView = "canvas" | "flows" | "imagegen" | "library" | "accounts";
+//   templates — shared template library
+//   team     — admin: Flowboard user accounts
+export type AppView = "canvas" | "flows" | "imagegen" | "library" | "accounts" | "templates" | "team";
 
 interface ViewState {
   view: AppView;

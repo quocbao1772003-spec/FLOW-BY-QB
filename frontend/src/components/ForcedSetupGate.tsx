@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getLlmConfig } from "../api/client";
 import { AiProviderDialog } from "./AiProviderDialog";
+import { isAdmin, useSessionStore } from "../store/session";
 
 /**
  * App-level gate that force-opens the AI Provider dialog whenever the
@@ -26,6 +27,9 @@ export function ForcedSetupGate() {
   // null = haven't checked yet (don't render anything to avoid a flash
   // of forced-open dialog before the real state lands).
   const [configured, setConfigured] = useState<boolean | null>(null);
+  // On a team server only an admin can pick the AI provider, so staff are
+  // never locked behind this dialog.
+  const admin = useSessionStore((s) => isAdmin(s.user));
 
   useEffect(() => {
     let alive = true;
@@ -60,7 +64,7 @@ export function ForcedSetupGate() {
     };
   }, []);
 
-  if (configured !== false) return null;
+  if (configured !== false || !admin) return null;
 
   return (
     <AiProviderDialog

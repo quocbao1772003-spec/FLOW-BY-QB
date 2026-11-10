@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlmodel import delete as sql_delete, select
 
 from flowboard.db import get_session
+from flowboard.services import access
 from flowboard.db.models import (
     Asset,
     Board,
@@ -29,15 +30,37 @@ class BoardUpdate(BaseModel):
 
 
 @router.get("")
-def list_boards():
+def list_boards(all: bool = False):
+    """The user's own flows (admins: plus legacy ones; ``all=true`` → every
+    user's flows, each with its owner)."""
+    from flowboard.db.models import User
+
+    user = access.me()
     with get_session() as s:
-        return s.exec(select(Board)).all()
+        rows = [b for b in s.exec(select(Board)).all() if access.visible_in_list(b, user, all)]
+        names = {u.id: (u.display_name or u.username) for u in s.exec(select(User)).all()}
+        covers: dict[int, str] = {}
+        ids = [b.id for b in rows]
+        if ids:
+            for n in s.exec(select(Node).where(Node.board_id.in_(ids)).order_by(Node.id)).all():
+                if n.board_id in covers:
+                    continue
+                mid = (n.data or {}).get("mediaId")
+                if n.type in ("image", "visual_asset", "character", "Storyboard") and isinstance(mid, str) and mid:
+                    covers[n.board_id] = mid
+    return [
+        {**b.model_dump(), "cover_media_id": covers.get(b.id),
+         "owner_name": names.get(b.owner_user_id) if b.owner_user_id else None,
+         "mine": user is None or b.owner_user_id == user.id or (b.owner_user_id is None and user.role == "admin")}
+        for b in rows
+    ]
 
 
 @router.post("")
 def create_board(body: BoardCreate):
     with get_session() as s:
-        board = Board(name=body.name)
+        user = access.me()
+        board = Board(name=body.name, owner_user_id=user.id if user else None)
         s.add(board)
         s.commit()
         s.refresh(board)
@@ -46,6 +69,7 @@ def create_board(body: BoardCreate):
 
 @router.get("/{board_id}")
 def get_board(board_id: int):
+    access.require_board(board_id)
     with get_session() as s:
         board = s.get(Board, board_id)
         if not board:
@@ -57,6 +81,7 @@ def get_board(board_id: int):
 
 @router.patch("/{board_id}")
 def update_board(board_id: int, body: BoardUpdate):
+    access.require_board(board_id)
     with get_session() as s:
         board = s.get(Board, board_id)
         if not board:
@@ -82,6 +107,7 @@ def delete_board(board_id: int):
     The project on labs.google itself is NOT deleted (Flow doesn't expose a
     delete-project API through the flow_client we use).
     """
+    access.require_board(board_id)
     with get_session() as s:
         board = s.get(Board, board_id)
         if not board:

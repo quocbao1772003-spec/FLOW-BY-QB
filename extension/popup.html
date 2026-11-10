@@ -102,6 +102,36 @@
       border-color: #1e3a32;
     }
 
+    .server {
+      padding: 10px 12px;
+      border-bottom: 1px solid #23263a;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .server label {
+      color: #6b7280;
+      font-size: 11px;
+    }
+    .server input {
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      background: #0f1116;
+      color: #e6e8ec;
+      border: 1px solid #2e3250;
+      border-radius: 7px;
+      font-size: 12px;
+      outline: none;
+    }
+    .server input:focus { border-color: #f2558f; }
+    .server .hint { color: #6b7280; font-size: 10.5px; line-height: 1.4; }
+    .server .ok { color: #6ee7b7; font-size: 11px; }
+    button#btn-save {
+      color: #ffb3cf;
+      border-color: #4a2236;
+      text-align: center;
+    }
     button#btn-toggle.disconnect {
       color: #ef4444;
       border-color: #3a1e1e;
@@ -135,6 +165,14 @@
     <span class="section-value error-value" id="error-row"></span>
   </div>
 
+  <div class="server">
+    <label for="server-url">Server Flowboard</label>
+    <input id="server-url" placeholder="Để trống = app trên máy này" autocomplete="off" spellcheck="false" />
+    <label for="pair-token">Mã ghép nối</label>
+    <input id="pair-token" placeholder="fbp_… (Tài khoản Flow → Kết nối Chrome)" autocomplete="off" spellcheck="false" />
+    <span class="hint" id="pair-hint">Chỉ cần khi dùng server có đăng nhập.</span>
+    <button id="btn-save">Lưu và kết nối</button>
+  </div>
   <div class="actions">
     <button id="btn-flow-tab">Open Flow tab</button>
     <button id="btn-refresh">Refresh token</button>

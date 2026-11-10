@@ -117,6 +117,10 @@ export interface Board {
   id: number;
   name: string;
   created_at: string;
+  owner_user_id?: number | null;
+  owner_name?: string | null;
+  cover_media_id?: string | null;
+  mine?: boolean;
 }
 
 export interface NodeDTO {
@@ -154,8 +158,8 @@ export interface BoardDetail {
 
 // ── API methods ──────────────────────────────────────────────────────────────
 
-export function listBoards(): Promise<Board[]> {
-  return api<Board[]>("/api/boards");
+export function listBoards(all = false): Promise<Board[]> {
+  return api<Board[]>(all ? "/api/boards?all=true" : "/api/boards");
 }
 
 export function createBoard(name: string): Promise<Board> {

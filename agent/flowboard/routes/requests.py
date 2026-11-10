@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from flowboard.db import get_session
 from flowboard.db.models import Node, Request
+from flowboard.services.users import current_user_id
 from flowboard.worker.processor import get_worker
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
@@ -22,10 +23,15 @@ def create_request(body: RequestCreate):
     with get_session() as s:
         if body.node_id is not None and not s.get(Node, body.node_id):
             raise HTTPException(404, "node not found")
+        params = {k: v for k, v in dict(body.params).items() if k != "_user_id"}
+        uid = current_user_id.get()
+        if uid is not None:
+            # The job runs on this Flowboard user's own Google Flow accounts.
+            params["_user_id"] = uid
         req = Request(
             node_id=body.node_id,
             type=body.type,
-            params=dict(body.params),
+            params=params,
             status="queued",
         )
         s.add(req)

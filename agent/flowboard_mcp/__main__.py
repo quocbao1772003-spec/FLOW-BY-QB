@@ -205,11 +205,22 @@ def _python_exe() -> str:
     return str(exe)
 
 
+def _remote_env() -> dict:
+    """FLOWBOARD_URL / FLOWBOARD_TOKEN to bake into the client config when
+    the MCP should drive a Flowboard server instead of this machine."""
+    env = {}
+    for key in ("FLOWBOARD_URL", "FLOWBOARD_TOKEN"):
+        val = os.getenv(key, "").strip()
+        if val:
+            env[key] = val
+    return env
+
+
 def _server_entry() -> dict:
     return {
         "command": _python_exe(),
         "args": ["-m", "flowboard_mcp"],
-        "env": {"PYTHONPATH": str(AGENT_DIR), "PYTHONIOENCODING": "utf-8"},
+        "env": {"PYTHONPATH": str(AGENT_DIR), "PYTHONIOENCODING": "utf-8", **_remote_env()},
     }
 
 
@@ -295,6 +306,7 @@ def install_codex() -> str:
         "[mcp_servers.flowboard.env]\n"
         f'PYTHONPATH = "{esc(entry["env"]["PYTHONPATH"])}"\n'
         'PYTHONIOENCODING = "utf-8"\n'
+        + "".join(f'{k} = "{esc(v)}"\n' for k, v in _remote_env().items())
     )
     if cfg.is_file():
         shutil.copy2(cfg, cfg.with_suffix(".toml.bak"))
@@ -312,7 +324,9 @@ def main() -> None:
     p_sec.add_argument("--rotate", action="store_true")
     p_pub = sub.add_parser("public")
     p_pub.add_argument("--port", type=int, default=int(os.getenv("FLOWBOARD_MCP_PORT", "8765")))
-    sub.add_parser("install")
+    p_inst = sub.add_parser("install")
+    p_inst.add_argument("--server", help="URL Flowboard server, vd https://flow.congty.com")
+    p_inst.add_argument("--token", help="Token MCP (fbt_...) tao o trang Tai khoan Flow")
     sub.add_parser("stdio")
     args = ap.parse_args()
 
@@ -323,6 +337,10 @@ def main() -> None:
     elif args.cmd == "secret":
         print(load_secret(rotate=args.rotate))
     elif args.cmd == "install":
+        if args.server:
+            os.environ["FLOWBOARD_URL"] = args.server.rstrip("/")
+        if args.token:
+            os.environ["FLOWBOARD_TOKEN"] = args.token.strip()
         for fn in (install_claude_desktop, install_claude_code, install_codex):
             try:
                 print(fn())

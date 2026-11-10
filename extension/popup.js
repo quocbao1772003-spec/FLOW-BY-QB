@@ -14,8 +14,18 @@ function formatTokenAge(ms) {
   return `captured ${Math.floor(s / 3600)} h ago`;
 }
 
+let _configLoaded = false;
+
 function render(status) {
   if (!status) return;
+
+  if (!_configLoaded) {
+    _configLoaded = true;
+    document.getElementById('server-url').value = status.serverUrl || '';
+    document.getElementById('pair-hint').textContent = status.paired
+      ? 'Đã có mã ghép nối. Để trống ô mã nếu không muốn đổi.'
+      : 'Chỉ cần khi dùng server có đăng nhập.';
+  }
 
   _manualDisconnect = status.manualDisconnect;
 
@@ -91,6 +101,28 @@ document.getElementById('btn-toggle').addEventListener('click', () => {
   const type = document.getElementById('btn-toggle').className === 'reconnect' ? 'RECONNECT' : 'DISCONNECT';
   chrome.runtime.sendMessage({ type }, () => {
     if (chrome.runtime.lastError) return;
+    fetchStatus();
+  });
+});
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const serverUrl = document.getElementById('server-url').value.trim();
+  const pairToken = document.getElementById('pair-token').value.trim();
+  const hint = document.getElementById('pair-hint');
+  if (serverUrl) {
+    // The extension posts job results back to the server: Chrome asks the
+    // user once to allow this site.
+    let origin = '';
+    try { origin = new URL(/^https?:\/\//i.test(serverUrl) ? serverUrl : 'https://' + serverUrl).origin; } catch (e) { /* ignore */ }
+    if (!origin) { hint.textContent = 'Địa chỉ server không hợp lệ.'; return; }
+    const granted = await chrome.permissions.request({ origins: [origin + '/*'] }).catch(() => false);
+    if (!granted) { hint.textContent = 'Cần cho phép truy cập ' + origin + ' để gửi kết quả về server.'; return; }
+  }
+  chrome.runtime.sendMessage({ type: 'SET_SERVER', serverUrl, pairToken, keepToken: !pairToken }, (reply) => {
+    if (chrome.runtime.lastError) return;
+    document.getElementById('pair-token').value = '';
+    hint.className = 'hint ok';
+    hint.textContent = reply && reply.serverUrl ? 'Đã lưu: ' + reply.serverUrl : 'Đã lưu: app trên máy này';
     fetchStatus();
   });
 });

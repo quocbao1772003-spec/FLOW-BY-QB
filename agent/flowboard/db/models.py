@@ -13,6 +13,9 @@ class Board(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     created_at: datetime = Field(default_factory=_utcnow)
+    # Flowboard user who owns the board (server mode). NULL = created before
+    # user accounts existed; those belong to the admins.
+    owner_user_id: Optional[int] = Field(default=None, index=True)
 
 
 class Node(SQLModel, table=True):
@@ -204,3 +207,58 @@ class MediaOwner(SQLModel, table=True):
     media_id: str = Field(primary_key=True)
     account: str = Field(index=True)
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+# ── Flowboard user accounts (server mode) ─────────────────────────────────
+# While no user exists the app runs open, exactly as the single-user local
+# app always has. The first admin turns login on for everything.
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    display_name: str = ""
+    password_hash: str
+    role: str = "staff"  # admin | staff
+    disabled: bool = False
+    created_at: datetime = Field(default_factory=_utcnow)
+    last_login_at: Optional[datetime] = None
+
+
+class UserSession(SQLModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime
+    user_agent: str = ""
+
+
+class AccessToken(SQLModel, table=True):
+    """Long-lived secrets tied to a user: ``bridge`` = pairing code pasted
+    into the Chrome extension, ``api`` = token for MCP / scripts."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    kind: str = "bridge"
+    label: str = ""
+    token_hash: str = Field(index=True, unique=True)
+    hint: str = ""  # first characters, to recognise it in the list
+    created_at: datetime = Field(default_factory=_utcnow)
+    last_used_at: Optional[datetime] = None
+    revoked: bool = False
+
+
+class FlowTemplate(SQLModel, table=True):
+    """A flow published to the shared template library. Holds a frozen copy
+    (nodes + edges) taken at publish time; "Use" clones it into a new board
+    of the user, so nobody's copy ever changes the template or another copy."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    description: str = ""
+    cover_media_id: Optional[str] = None
+    snapshot: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    node_count: int = 0
+    source_board_id: Optional[int] = Field(default=None, index=True)
+    created_by: Optional[int] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    use_count: int = 0

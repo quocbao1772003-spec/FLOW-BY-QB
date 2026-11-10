@@ -37,7 +37,19 @@ async def _handler(websocket) -> None:
     except (asyncio.TimeoutError, ValueError, websockets.ConnectionClosed):
         await websocket.close(code=4002, reason="Bridge handshake required")
         return
-    client = pool.attach(websocket, hello["instanceId"], hello["version"])
+    # Server mode: the profile must be paired with a Flowboard user (pairing
+    # code from the "Tài khoản Flow" page, pasted into the extension popup).
+    owner = None
+    from flowboard.services import users as users_svc
+
+    if users_svc.auth_enabled():
+        user = users_svc.user_for_token(hello.get("pairToken"), "bridge")
+        if user is None:
+            await websocket.send(json.dumps({"type": "bridge_rejected", "error": "PAIRING_REQUIRED"}))
+            await websocket.close(code=4004, reason="Pairing code required")
+            return
+        owner = user.id
+    client = pool.attach(websocket, hello["instanceId"], hello["version"], owner_user_id=owner)
     if client is None:
         await websocket.send(json.dumps({"type": "bridge_rejected", "error": "BRIDGE_BUSY"}))
         await websocket.close(code=4003, reason="Bridge slot busy")
@@ -95,3 +107,45 @@ async def run_ws_server() -> None:
     async with websockets.serve(_handler, WS_HOST, EXTENSION_WS_PORT):
         logger.info("WebSocket server listening on ws://%s:%d", WS_HOST, EXTENSION_WS_PORT)
         await asyncio.Future()  # run forever
+
+
+class StarletteBridgeSocket:
+    """Lets the same handler serve the bridge on the main HTTP app
+    (``/ws/bridge``) — that is the path a server deploy exposes through
+    Cloudflare as ``wss://<domain>/ws/bridge``."""
+
+    def __init__(self, ws) -> None:
+        self._ws = ws
+        client = getattr(ws, "client", None)
+        self.remote_address = (client.host, client.port) if client else None
+
+    async def recv(self):
+        from starlette.websockets import WebSocketDisconnect
+
+        try:
+            return await self._ws.receive_text()
+        except WebSocketDisconnect as exc:
+            raise websockets.ConnectionClosed(None, None) from exc
+
+    async def send(self, raw) -> None:
+        await self._ws.send_text(raw)
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        try:
+            await self._ws.close(code=code, reason=reason)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return await self.recv()
+        except websockets.ConnectionClosed:
+            raise StopAsyncIteration
+
+
+async def serve_starlette(ws) -> None:
+    await ws.accept()
+    await _handler(StarletteBridgeSocket(ws))

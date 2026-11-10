@@ -15,6 +15,8 @@ Chrome profile C (staff.c@...) ─┘
 3. Đăng nhập tài khoản Google Flow Pro, mở Flow rồi **vào một project bất kỳ** (trang `flow.google.com/project/...`) và để tab đó mở. Extension đọc email từ tab project này và dùng nó để giải captcha. Nếu trang Tài khoản Flow ghi "Profile chưa nhận diện", tức là profile đó chưa mở tab project. Profile như vậy không được giao lệnh khi đã có tài khoản khác.
 4. Tài khoản tự hiện trong trang **Tài khoản Flow** trên menu bên trái. Ô nhỏ ở góc dưới bên trái cũng mở trang này.
 
+Khi Flowboard đã có tài khoản nhân viên (đã tạo admin), mỗi profile còn cần **mã ghép nối**: tạo ở mục Kết nối Chrome trên trang Tài khoản Flow, rồi điền Server và mã vào popup extension. Mỗi người chỉ thấy và chỉ dùng tài khoản Google Flow của chính mình. Chi tiết: [SERVER.md](SERVER.md).
+
 Không lưu mật khẩu ở đâu cả. Mỗi tài khoản vẫn đăng nhập trong Chrome profile của nó.
 
 ## Cách tự đổi hoạt động

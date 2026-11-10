@@ -1,0 +1,21 @@
+# Flowboard team server. Quick start: docs/SERVER.md
+#   cp deploy/env.example .env   (fill in), then:  docker compose up -d --build
+services:
+  flowboard:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./storage:/data
+    # Only reachable from the host itself; the public entry is Cloudflare Tunnel.
+    ports:
+      - "127.0.0.1:8101:8101"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - flowboard
