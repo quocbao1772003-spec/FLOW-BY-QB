@@ -13,7 +13,12 @@ dependencies = [
     "httpx>=0.27",
     # Local, faithful upscaling (Lanczos + unsharp) — see routes/upscale.py.
     "Pillow>=10.0",
+    # MCP server (flowboard_mcp) — lets Claude / ChatGPT drive Flowboard.
+    "mcp>=2.3,<3",
 ]
+
+[project.scripts]
+flowboard-mcp = "flowboard_mcp.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -27,7 +32,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["flowboard"]
+packages = ["flowboard", "flowboard_mcp"]
 
 [tool.ruff]
 line-length = 100

@@ -10,6 +10,8 @@ from flowboard.config import WS_HOST
 from flowboard.db import get_session, init_db
 from flowboard.db.models import Request
 from flowboard.routes import activity, ai_chat, assets, assistant, auth, boards, chat, edges, flow_projects, llm, media, nodes, plans, projects, prompt, upload, upscale, vision
+from flowboard.routes import sync as sync_route
+from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
 from flowboard.services.flow_client import flow_client
@@ -76,6 +78,42 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Flowboard Agent", version="0.0.2", lifespan=lifespan)
 
+_MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+class _McpLiveSync:
+    """Pure-ASGI middleware (doesn't buffer SSE streams): after a successful
+    change made by an external controller — the MCP server tags its calls
+    with ``X-Flowboard-Source: mcp`` — bump the live-sync revision so the
+    open UI reloads the board."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope.get("type") != "http"
+            or scope.get("method") not in _MUTATING
+            or scope.get("path", "").startswith("/api/sync")
+            or (b"x-flowboard-source", b"mcp") not in [
+                (k.lower(), v) for k, v in scope.get("headers", [])
+            ]
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        status_holder = {"code": 500}
+
+        async def _send(message):
+            if message.get("type") == "http.response.start":
+                status_holder["code"] = message.get("status", 500)
+            await send(message)
+
+        await self.app(scope, receive, _send)
+        if status_holder["code"] < 400:
+            sync_state.bump()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -83,6 +121,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(_McpLiveSync)
 
 app.include_router(boards.router)
 app.include_router(nodes.router)
@@ -105,6 +144,7 @@ app.include_router(assistant.router)
 app.include_router(assets.router)
 app.include_router(upscale.router)
 app.include_router(ai_chat.router)
+app.include_router(sync_route.router)
 
 
 @app.get("/api/health")

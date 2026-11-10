@@ -76,6 +76,15 @@ def create_node(body: NodeCreate):
         return node
 
 
+@router.get("/{node_id}")
+def get_node(node_id: int):
+    with get_session() as s:
+        node = s.get(Node, node_id)
+        if not node:
+            raise HTTPException(404, "node not found")
+        return node
+
+
 @router.patch("/{node_id}")
 def update_node(node_id: int, body: NodeUpdate):
     """Partial update.

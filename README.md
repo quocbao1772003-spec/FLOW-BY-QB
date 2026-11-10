@@ -61,6 +61,10 @@ Flowboard là workspace **canvas vô hạn** chạy **local trên máy bạn**, 
 
 ---
 
+### Điều khiển bằng Claude / ChatGPT (MCP)
+
+Chạy `MCP-CAI-DAT.bat` để Claude Desktop, Claude Code, Codex điều khiển toàn bộ Flowboard; `MCP-CHATGPT.bat` để nối ChatGPT hoặc claude.ai trên web. Hướng dẫn: [docs/MCP.md](docs/MCP.md).
+
 ## Kiến trúc
 
 ```

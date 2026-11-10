@@ -898,7 +898,94 @@ class WorkerController:
             except Exception:  # noqa: BLE001
                 logger.exception("worker: failed to record failure for rid=%s", rid)
         finally:
+            try:
+                finalize_node_for_request(rid)
+            except Exception:  # noqa: BLE001
+                logger.exception("worker: node finalize failed for rid=%s", rid)
             self._active -= 1
+
+
+# ── Node finalize for headless dispatches (MCP / API) ─────────────────────
+# The browser UI patches the node itself while it polls a request it
+# dispatched. Requests created by the MCP server carry
+# ``params._finalize_node = true`` so the worker writes the result onto
+# the node instead (same fields the UI writes), then bumps live-sync so an
+# open UI reloads and shows the new images.
+_TERMINAL = {"done", "failed", "timeout", "canceled"}
+
+
+def finalize_node_for_request(rid: int) -> bool:
+    from flowboard.db.models import Node
+    from flowboard.services import sync as sync_state
+
+    with get_session() as s:
+        req = s.get(Request, rid)
+        if req is None or req.node_id is None:
+            return False
+        params = dict(req.params or {})
+        if not params.get("_finalize_node") or req.status not in _TERMINAL:
+            return False
+        result = dict(req.result or {})
+        if result.get("_node_finalized"):
+            return False
+        node = s.get(Node, req.node_id)
+        if node is None:
+            return False
+        data = dict(node.data or {})
+        now = datetime.now(timezone.utc).isoformat()
+        if req.status == "done":
+            media_ids = [m if isinstance(m, str) and m else None
+                         for m in (result.get("media_ids") or [])]
+            media_id = next((m for m in media_ids if m), None)
+            if media_id is None:
+                node.status = "error"
+                data["error"] = "no_media_returned"
+            else:
+                node.status = "done"
+                data.update({
+                    "prompt": params.get("prompt") or data.get("prompt"),
+                    "mediaId": media_id,
+                    "mediaIds": media_ids,
+                    "variantCount": len(media_ids) or 1,
+                    "renderedAt": now,
+                })
+                aspect = params.get("aspect_ratio")
+                if isinstance(aspect, str) and aspect:
+                    data["aspectRatio"] = aspect
+                slot_errors = result.get("slot_errors")
+                if isinstance(slot_errors, list):
+                    data["slotErrors"] = slot_errors
+                else:
+                    data.pop("slotErrors", None)
+                partial = result.get("partial_error")
+                if partial:
+                    data["error"] = partial
+                else:
+                    data.pop("error", None)
+                data.pop("aiBrief", None)
+                if req.type in ("gen_image", "edit_image") and params.get("image_model"):
+                    data["imageModel"] = params["image_model"]
+                if req.type == "gen_video" and params.get("video_quality"):
+                    data["videoQuality"] = params["video_quality"]
+                if req.type == "gen_video_omni" and params.get("duration_s") in (4, 6, 8, 10):
+                    data["videoQuality"] = f"abra_r2v_{params['duration_s']}s"
+        elif req.status == "canceled":
+            node.status = "idle"
+        else:
+            node.status = "error"
+            data["error"] = (
+                f"Timed out ({req.error or 'video_timeout'})"
+                if req.status == "timeout" else (req.error or "failed")
+            )
+        node.data = data
+        result["_node_finalized"] = True
+        req.result = result
+        s.add(node)
+        s.add(req)
+        s.commit()
+        board_id = node.board_id
+    sync_state.bump(board_id)
+    return True
 
 
 _worker: Optional[WorkerController] = None

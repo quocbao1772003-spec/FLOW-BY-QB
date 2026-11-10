@@ -18,6 +18,7 @@ import { AiChatPanel } from "./components/ai-chat/AiChatPanel";
 import { useBoardStore } from "./store/board";
 import { useReferencesStore } from "./store/references";
 import { useViewStore } from "./store/view";
+import { useMcpSync } from "./lib/mcpSync";
 
 export function App() {
   const loadInitialBoard = useBoardStore((s) => s.loadInitialBoard);
@@ -26,6 +27,8 @@ export function App() {
   const boardId = useBoardStore((s) => s.boardId);
   const view = useViewStore((s) => s.view);
   const ran = useRef(false);
+  // Reload the board when Claude / ChatGPT change it through the MCP server.
+  useMcpSync();
 
   useEffect(() => {
     if (ran.current) return;
