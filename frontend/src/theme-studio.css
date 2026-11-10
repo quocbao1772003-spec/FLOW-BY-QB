@@ -1433,6 +1433,11 @@ a.account-panel__version-link:hover code {
   text-overflow: ellipsis;
 }
 
+.account-card__note--warn {
+  color: var(--warn);
+  white-space: normal;
+}
+
 .account-card__nums {
   display: grid;
   grid-template-columns: repeat(4, 64px);

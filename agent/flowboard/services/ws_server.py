@@ -43,6 +43,7 @@ async def _handler(websocket) -> None:
         await websocket.close(code=4003, reason="Bridge slot busy")
         return
     logger.info("extension connected (profile %s…)", hello["instanceId"][:8])
+    nudger = asyncio.create_task(_nudge_identity(client, websocket))
 
     # Hand the extension the secret it needs to authenticate HTTP callbacks.
     try:
@@ -70,8 +71,24 @@ async def _handler(websocket) -> None:
     except websockets.ConnectionClosed:
         pass
     finally:
+        nudger.cancel()
         pool.detach(websocket)
         logger.info("extension disconnected (profile %s…)", hello["instanceId"][:8])
+
+
+async def _nudge_identity(client, websocket) -> None:
+    """The extension reads the signed-in email from an open Flow project tab.
+    Until it has one, ask again every few seconds (cheap, local)."""
+    try:
+        for i in range(720):  # ~1 hour
+            await asyncio.sleep(5 if i < 12 else 15)
+            if not client.owns_extension(websocket):
+                return
+            if pool.identified(client):
+                continue
+            await client.notify({"type": "please_resend_userinfo"})
+    except asyncio.CancelledError:
+        pass
 
 
 async def run_ws_server() -> None:

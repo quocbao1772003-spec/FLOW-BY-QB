@@ -224,9 +224,13 @@ class AccountPool:
 
         def rank(c):
             k = self.key_of(c)
-            return order.index(k) if k in order else len(order)
+            # Profiles that haven't told us their Google account yet go last.
+            return (not self.identified(c), order.index(k) if k in order else len(order))
 
         return sorted(out, key=rank)
+
+    def identified(self, client: Any) -> bool:
+        return not self.key_of(client).startswith("profile:")
 
     def _exhausted(self, key: str, now: Optional[float] = None) -> Optional[dict]:
         now = time.time() if now is None else now
@@ -245,6 +249,11 @@ class AccountPool:
         conn = [c for c in self.connected_clients() if self.key_of(c) not in exclude]
         if not conn:
             return None
+        # A profile whose Google account is unknown (no Flow project tab open
+        # yet) is only used when nothing else is connected.
+        known = [c for c in conn if self.identified(c)]
+        if known:
+            conn = known
         sel = self._state.get("selected")
         chosen = next((c for c in conn if self.key_of(c) == sel), None)
         if chosen is not None and (not self._state.get("auto_rotate") or self.is_available(chosen, now)):
@@ -277,7 +286,7 @@ class AccountPool:
         now = time.time()
         for c in self.connected_clients():
             k = self.key_of(c)
-            if k in exclude:
+            if k in exclude or not self.identified(c):
                 continue
             if self.is_available(c, now):
                 return c
@@ -293,6 +302,16 @@ class AccountPool:
             if self.key_of(c) == key.lower():
                 return c
         return None
+
+    async def ask_identities(self) -> int:
+        """Ask every connected profile that hasn't reported its Google
+        account to read it again from its Flow tab."""
+        n = 0
+        for c in self.connected_clients():
+            if not self.identified(c):
+                if await c.notify({"type": "please_resend_userinfo"}):
+                    n += 1
+        return n
 
     @contextlib.contextmanager
     def pin(self, client: Any) -> Iterator[Any]:
@@ -370,6 +389,7 @@ class AccountPool:
                 "name": (c.user_info or {}).get("name"),
                 "picture": (c.user_info or {}).get("picture"),
                 "connected": c.connected,
+                "identified": not key.startswith("profile:"),
                 "instance": inst[:8],
                 "active": key == cur_key,
                 "selected": key == self._state.get("selected"),

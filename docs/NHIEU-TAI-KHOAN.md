@@ -12,7 +12,7 @@ Chrome profile C (staff.c@...) ─┘
 
 1. Trong Chrome, bấm vào ảnh đại diện góc trên bên phải, chọn **Thêm** để tạo profile mới (hoặc mở profile có sẵn).
 2. Trong profile đó, cài extension **Flowboard Bridge**: vào `chrome://extensions`, bật Developer mode, chọn Load unpacked, rồi chọn thư mục `extension` trong `E:\FLOW-BY-QB-main`.
-3. Đăng nhập tài khoản Google Flow Pro, mở `labs.google/fx/tools/flow` và để tab đó mở. Extension cần tab Flow để giải captcha.
+3. Đăng nhập tài khoản Google Flow Pro, mở Flow rồi **vào một project bất kỳ** (trang `flow.google.com/project/...`) và để tab đó mở. Extension đọc email từ tab project này và dùng nó để giải captcha. Nếu trang Tài khoản Flow ghi "Profile chưa nhận diện", tức là profile đó chưa mở tab project. Profile như vậy không được giao lệnh khi đã có tài khoản khác.
 4. Tài khoản tự hiện trong trang **Tài khoản Flow** trên menu bên trái. Ô nhỏ ở góc dưới bên trái cũng mở trang này.
 
 Không lưu mật khẩu ở đâu cả. Mỗi tài khoản vẫn đăng nhập trong Chrome profile của nó.

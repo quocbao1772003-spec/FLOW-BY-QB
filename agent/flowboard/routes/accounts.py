@@ -114,3 +114,10 @@ class OrderBody(BaseModel):
 def set_order(body: OrderBody) -> dict:
     account_pool.set_order(body.keys)
     return account_pool.snapshot()
+
+
+@router.post("/scan")
+async def scan_accounts() -> dict:
+    """Ask profiles with an unknown Google account to read it again."""
+    asked = await account_pool.ask_identities()
+    return {**account_pool.snapshot(), "asked": asked}

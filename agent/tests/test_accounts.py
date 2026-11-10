@@ -195,3 +195,20 @@ def test_accounts_api_reports_today_usage(client):
     rows = {a["key"]: a["today"] for a in client.get("/api/accounts").json()["accounts"]}
     assert rows["b@x.test"] == {"jobs": 1, "done": 1, "failed": 0, "media": 2, "switched_away": 0}
     assert rows["a@x.test"]["switched_away"] == 1
+
+
+def test_unidentified_profile_is_not_used_while_a_known_account_exists(client):
+    a, _ = _connect("a@x.test", "inst-AAAAAAAAAAAAAAAA")
+    anon = account_pool.attach(_WS(), "inst-ZZZZZZZZZZZZZZZZ", "0.1.15")
+    account_pool.select(account_pool.key_of(anon))
+    assert account_pool.current() is a
+    assert account_pool.next_account({"a@x.test"}) is None
+    rows = {r["key"]: r for r in account_pool.snapshot()["accounts"]}
+    assert rows[account_pool.key_of(anon)]["identified"] is False
+    assert [r["key"] for r in account_pool.snapshot()["accounts"]][0] == "a@x.test"
+    account_pool.select(None)
+    # Alone, an unidentified profile still works (old single-profile setups).
+    account_pool._reset_for_tests()
+    only = account_pool.attach(_WS(), "inst-YYYYYYYYYYYYYYYY", "0.1.15")
+    assert account_pool.current() is only
+    assert client.post("/api/accounts/scan").json()["asked"] == 1

@@ -22,6 +22,7 @@ export interface FlowAccountRow {
   name: string | null;
   picture: string | null;
   connected: boolean;
+  identified?: boolean;
   active: boolean;
   selected: boolean;
   primary: boolean;
@@ -71,6 +72,7 @@ const dateTime = (ts: number) =>
 
 function statusOf(a: FlowAccountRow): { label: string; tone: "on" | "ready" | "spent" | "off" } {
   if (!a.connected) return { label: "Mất kết nối", tone: "off" };
+  if (a.identified === false) return { label: "Chưa nhận diện tài khoản · không được giao lệnh", tone: "spent" };
   if (a.exhausted) return { label: `Hết lượt · mở lại ${time(a.exhausted_until)}`, tone: "spent" };
   if (a.active) return { label: "Đang dùng", tone: "on" };
   return { label: "Sẵn sàng", tone: "ready" };
@@ -121,7 +123,7 @@ export function AccountsPage() {
 
   const accounts = data?.accounts ?? [];
   const live = accounts.filter((a) => a.connected);
-  const ready = live.filter((a) => !a.exhausted);
+  const ready = live.filter((a) => !a.exhausted && a.identified !== false);
   const spent = live.filter((a) => a.exhausted);
   const active = accounts.find((a) => a.active);
   const events = data?.events ?? [];
@@ -243,7 +245,7 @@ export function AccountsPage() {
 
               <div className="account-card__who">
                 <div className="account-card__line">
-                  <span className="account-card__email">{a.email || "Chưa rõ tài khoản"}</span>
+                  <span className="account-card__email">{a.email || "Profile chưa nhận diện"}</span>
                   {a.selected && <span className="account-tag account-tag--accent">Ưu tiên</span>}
                   {a.primary && <span className="account-tag">Tài khoản chính</span>}
                 </div>
@@ -253,6 +255,11 @@ export function AccountsPage() {
                   {a.name && <span>· {a.name}</span>}
                   {a.extension_version && <span>· extension {a.extension_version}</span>}
                 </div>
+                {a.connected && a.identified === false && (
+                  <div className="account-card__note account-card__note--warn">
+                    Trong profile Chrome này mở Google Flow và vào một project bất kỳ (trang flow.google.com/project/…).
+                  </div>
+                )}
                 {a.exhausted && a.exhausted_reason && (
                   <div className="account-card__note" title={a.exhausted_reason}>{a.exhausted_reason}</div>
                 )}
@@ -284,20 +291,32 @@ export function AccountsPage() {
                 <button
                   type="button"
                   className={`accounts-btn${a.selected ? " accounts-btn--on" : ""}`}
-                  disabled={busy || (!a.connected && !a.selected)}
+                  disabled={busy || ((!a.connected || a.identified === false) && !a.selected)}
                   onClick={() => act(() => post("/api/accounts/select", { key: a.selected ? null : a.key }))}
                 >
                   {a.selected ? "Bỏ ưu tiên" : "Ưu tiên dùng"}
                 </button>
-                <button
-                  type="button"
-                  className="accounts-btn"
-                  disabled={busy || !a.exhausted}
-                  onClick={() => act(() => post("/api/accounts/reset", { key: a.key }))}
-                  title="Bỏ dấu hết lượt, ví dụ sau khi mua thêm credit"
-                >
-                  Mở lại lượt
-                </button>
+                {a.connected && a.identified === false ? (
+                  <button
+                    type="button"
+                    className="accounts-btn"
+                    disabled={busy}
+                    onClick={() => act(() => post("/api/accounts/scan", {}))}
+                    title="Đọc lại tài khoản từ tab Flow của profile này"
+                  >
+                    Quét lại
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="accounts-btn"
+                    disabled={busy || !a.exhausted}
+                    onClick={() => act(() => post("/api/accounts/reset", { key: a.key }))}
+                    title="Bỏ dấu hết lượt, ví dụ sau khi mua thêm credit"
+                  >
+                    Mở lại lượt
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -348,8 +367,8 @@ export function AccountsPage() {
           <span className="accounts-step__num">3</span>
           <span className="accounts-step__title">Đăng nhập Flow</span>
           <span className="accounts-step__text">
-            Đăng nhập Google Flow Pro và để mở một tab <code>labs.google/fx/tools/flow</code>. Tài khoản sẽ
-            tự hiện trong danh sách trên.
+            Đăng nhập Google Flow Pro, mở Flow rồi <b>vào một project bất kỳ</b> (trang{" "}
+            <code>flow.google.com/project/…</code>) và để tab đó mở. Email sẽ tự hiện trong danh sách trên.
           </span>
         </div>
       </div>
