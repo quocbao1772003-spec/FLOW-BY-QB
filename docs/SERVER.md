@@ -17,7 +17,22 @@ Cloudflare Tunnel  ──►  Hetzner: docker compose (flowboard + cloudflared)
 - Admin thấy được tất cả.
 - Chia sẻ flow giữa mọi người thì đưa vào **Thư viện mẫu**.
 
-## 1. Chuẩn bị server
+## Cách nhanh: một lệnh
+
+SSH vào server rồi chạy:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/quocbao1772003-spec/FLOW-BY-QB/main/deploy/install.sh | sudo bash
+```
+
+Script hỏi tên miền, Cloudflare Tunnel token (bước 2 bên dưới), tài khoản admin, rồi tự cài Docker, build và chạy.
+
+- Mọi thứ nằm riêng trong `/opt/flowboard` và các container `flowboard-*`, không đụng app khác trên cùng server.
+- Chạy lại lệnh này bất cứ lúc nào để cập nhật bản mới.
+
+Nếu repo để private, clone bằng tay vào `/opt/flowboard` trước (`git clone` với token GitHub), rồi chạy `sudo bash /opt/flowboard/deploy/install.sh`.
+
+## 1. Chuẩn bị server (cách làm tay)
 
 Hetzner Cloud là đủ: CX22 (2 vCPU, 4 GB RAM), Ubuntu 24.04. Không cần mở cổng nào ngoài SSH vì Cloudflare Tunnel tự đi ra ngoài.
 
@@ -44,7 +59,7 @@ Các biến trong `.env`:
 1. Mở Cloudflare Zero Trust, vào **Networks → Tunnels → Create a tunnel**, chọn loại **Cloudflared**.
 2. Đặt tên (ví dụ `flowboard`), chọn **Docker**, copy token (chuỗi dài sau `--token`) vào `TUNNEL_TOKEN`.
 3. Vào tab **Public Hostname → Add**:
-   - Subdomain `flow`, domain của anh.
+   - Subdomain `flowboard`, domain `flowytb…` (ví dụ `flowboard.flowytb.com`).
    - Service: `HTTP` và `flowboard:8101`.
 4. WebSocket được Cloudflare bật sẵn, không cần chỉnh gì thêm.
 

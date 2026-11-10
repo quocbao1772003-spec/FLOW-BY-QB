@@ -9,7 +9,7 @@ services:
       - ./storage:/data
     # Only reachable from the host itself; the public entry is Cloudflare Tunnel.
     ports:
-      - "127.0.0.1:8101:8101"
+      - "127.0.0.1:${FLOWBOARD_HOST_PORT:-8101}:8101"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
