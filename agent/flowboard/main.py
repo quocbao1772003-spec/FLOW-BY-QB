@@ -1,5 +1,4 @@
 import asyncio
-import hmac
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,10 +10,11 @@ from flowboard.db import get_session, init_db
 from flowboard.db.models import Request
 from flowboard.routes import activity, ai_chat, assets, assistant, auth, boards, chat, edges, flow_projects, llm, media, nodes, plans, projects, prompt, upload, upscale, vision
 from flowboard.routes import sync as sync_route
+from flowboard.routes import accounts as accounts_route
 from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
-from flowboard.services.flow_client import flow_client
+from flowboard.services.flow_client import account_pool, flow_client
 from flowboard.services.ws_server import run_ws_server
 from flowboard.worker.processor import get_worker, reset_image_project_session
 
@@ -145,6 +145,7 @@ app.include_router(assets.router)
 app.include_router(upscale.router)
 app.include_router(ai_chat.router)
 app.include_router(sync_route.router)
+app.include_router(accounts_route.router)
 
 
 @app.get("/api/health")
@@ -161,19 +162,24 @@ async def ext_callback(
     body: FastAPIRequest,
     x_callback_secret: str | None = Header(default=None, alias="X-Callback-Secret"),
 ) -> dict:
-    """HTTP callback for the extension to deliver API responses."""
-    if not x_callback_secret or not hmac.compare_digest(
-        x_callback_secret, flow_client.callback_secret
-    ):
-        raise HTTPException(status_code=401, detail="invalid callback secret")
-
+    """HTTP callback for the extension to deliver API responses. Each
+    connected profile has its own secret; the matching one owns the call."""
     try:
         payload = await body.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="invalid json body")
-
+        payload = None
+    if not x_callback_secret:
+        raise HTTPException(status_code=401, detail="invalid callback secret")
     if not isinstance(payload, dict) or "id" not in payload:
-        raise HTTPException(status_code=400, detail="missing id")
+        # Still reject a wrong secret before describing the body.
+        if account_pool.resolve_callback({"id": None}, x_callback_secret) is None:
+            raise HTTPException(status_code=401, detail="invalid callback secret")
+        raise HTTPException(
+            status_code=400,
+            detail="invalid json body" if payload is None else "missing id",
+        )
 
-    matched = flow_client.resolve_callback(payload)
+    matched = account_pool.resolve_callback(payload, x_callback_secret)
+    if matched is None:
+        raise HTTPException(status_code=401, detail="invalid callback secret")
     return {"ok": matched}

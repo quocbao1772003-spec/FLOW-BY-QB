@@ -173,3 +173,34 @@ class BoardFlowProject(SQLModel, table=True):
     board_id: int = Field(primary_key=True, foreign_key="board.id")
     flow_project_id: str
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+# ── Multi-account (several Google Flow accounts, see account_pool.py) ──────
+# Flow projects and media belong to the Google account that created them.
+# These tables let the agent notice when a job runs on a different account
+# than the one that owns a board's project or a reference image, and move
+# things across (new per-account project, re-upload of the image bytes).
+# Rows written before multi-account existed have no owner; they are treated
+# as belonging to the "primary" account (the first one ever connected).
+
+
+class FlowProjectOwner(SQLModel, table=True):
+    project_id: str = Field(primary_key=True)
+    account: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class BoardAccountProject(SQLModel, table=True):
+    """Extra board → Flow project bindings for accounts other than the one
+    that owns ``BoardFlowProject``."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    board_id: int = Field(foreign_key="board.id", index=True)
+    account: str = Field(index=True)
+    flow_project_id: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class MediaOwner(SQLModel, table=True):
+    media_id: str = Field(primary_key=True)
+    account: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow)

@@ -491,10 +491,16 @@ class FlowClient:
         }
 
 
-flow_client = FlowClient()
+# Several Chrome profiles (= Google Flow accounts) can be connected at once;
+# the pool routes each call to one of them. `flow_client` keeps its old name
+# and interface: it forwards to whichever account the pool picks.
+from flowboard.services.account_pool import AccountPool, FlowClientProxy  # noqa: E402
+
+account_pool = AccountPool()
+flow_client = FlowClientProxy(account_pool)
 
 
-def get_flow_client() -> FlowClient:
+def get_flow_client():
     return flow_client
 
 

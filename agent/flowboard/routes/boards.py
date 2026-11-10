@@ -6,6 +6,7 @@ from flowboard.db import get_session
 from flowboard.db.models import (
     Asset,
     Board,
+    BoardAccountProject,
     BoardFlowProject,
     ChatMessage,
     Edge,
@@ -107,6 +108,7 @@ def delete_board(board_id: int):
         s.exec(sql_delete(Plan).where(Plan.board_id == board_id))
         s.exec(sql_delete(ChatMessage).where(ChatMessage.board_id == board_id))
         s.exec(sql_delete(BoardFlowProject).where(BoardFlowProject.board_id == board_id))
+        s.exec(sql_delete(BoardAccountProject).where(BoardAccountProject.board_id == board_id))
         s.delete(board)
         s.commit()
         return {"deleted": board_id}

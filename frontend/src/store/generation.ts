@@ -415,10 +415,12 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
                 stampedVideoQuality = `abra_r2v_${d}s`;
               }
             }
+            const flowAccount = (req.result["flow_account"] as string | undefined) ?? undefined;
             useBoardStore.getState().updateNodeData(rfId, {
               status: "done",
               mediaId,
               mediaIds,
+              flowAccount,
               slotErrors: slotErrors ?? undefined,
               aiBrief: undefined,
               aspectRatio: opts.aspectRatio,
@@ -448,6 +450,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
                   prompt: opts.prompt,
                   mediaId,
                   mediaIds,
+                  ...(flowAccount ? { flowAccount } : {}),
                   slotErrors: slotErrors ?? null,
                   variantCount: d?.variantCount ?? mediaIds.length,
                   aiBrief: null,

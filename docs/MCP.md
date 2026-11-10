@@ -34,11 +34,12 @@ Lưu ý:
 - Ai có link là điều khiển được Flowboard và tiêu credit Flow. Đổi mã bí mật: `agent\.venv\Scripts\python.exe -m flowboard_mcp secret --rotate`.
 - Đóng cửa sổ `MCP-CHATGPT.bat` là ngắt kết nối.
 
-## 3. Công cụ có sẵn (37)
+## 3. Công cụ có sẵn (41)
 
 | Nhóm | Công cụ |
 |---|---|
 | Trạng thái | `flowboard_status` |
+| Tài khoản Flow | `list_flow_accounts`, `use_flow_account`, `set_account_auto_switch`, `reset_account_quota` (xem [NHIEU-TAI-KHOAN.md](NHIEU-TAI-KHOAN.md)) |
 | Board | `list_boards`, `get_board`, `create_board`, `rename_board`, `delete_board` (phải `confirm=true`), `open_board_in_ui` |
 | Node, nối dây | `get_node`, `create_node`, `update_node`, `delete_node`, `connect_nodes`, `set_edge_variant`, `delete_edge` |
 | Tạo ảnh/video | `generate_image`, `edit_image`, `generate_video`, `wait_for_request`, `get_request`, `cancel_request`, `list_activity` |

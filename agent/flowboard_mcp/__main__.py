@@ -276,7 +276,15 @@ def install_codex() -> str:
     cfg = home / "config.toml"
     text = cfg.read_text(encoding="utf-8") if cfg.is_file() else ""
     if "[mcp_servers.flowboard]" in text:
-        return "OK Codex: da co san [mcp_servers.flowboard]."
+        # Drop the old block (it may point at another Flowboard folder).
+        kept, skip = [], False
+        for line in text.splitlines():
+            head = line.strip()
+            if head.startswith("["):
+                skip = head in ("[mcp_servers.flowboard]", "[mcp_servers.flowboard.env]")
+            if not skip:
+                kept.append(line)
+        text = "\n".join(kept).rstrip() + "\n"
     entry = _server_entry()
     esc = lambda s: s.replace("\\", "\\\\").replace('"', '\\"')  # noqa: E731
     block = (

@@ -55,12 +55,21 @@ async def upscale_image(body: UpscaleBody):
     if not tier:
         raise HTTPException(status_code=409, detail="paygate_tier_unknown")
 
-    resp = await get_flow_sdk().upsample_image(
-        media_id=body.media_id,
-        project_id=body.project_id,
-        target_resolution=body.resolution,
-        paygate_tier=tier,
-    )
+    # The image may belong to another connected Google account (made before
+    # an automatic switch): run the upscale on that account.
+    from contextlib import nullcontext
+
+    from flowboard.services import account_projects
+    from flowboard.services.flow_client import account_pool
+
+    owner_client, project_id = account_projects.owner_route(body.media_id, body.project_id)
+    with account_pool.pin(owner_client) if owner_client is not None else nullcontext():
+        resp = await get_flow_sdk().upsample_image(
+            media_id=body.media_id,
+            project_id=project_id,
+            target_resolution=body.resolution,
+            paygate_tier=tier,
+        )
     if resp.get("error"):
         raise HTTPException(
             status_code=502,

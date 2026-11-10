@@ -338,6 +338,10 @@ async def _report(req: dict, node_id: Optional[int], return_images: bool) -> lis
         "type": req.get("type"),
         "node_id": node_id,
     }
+    if result.get("flow_account"):
+        out["flow_account"] = result["flow_account"]
+    if result.get("account_switches"):
+        out["account_switches"] = result["account_switches"]
     if status == "done":
         out["media_ids"] = result.get("media_ids")
         if result.get("partial_error"):
@@ -365,8 +369,10 @@ def _error_hint(err: str) -> str:
     e = err.upper()
     if "PAYGATE_TIER_UNKNOWN" in e:
         return "Mở labs.google/flow một lần trong Chrome để extension nhận diện gói Flow, rồi thử lại."
+    if "ALL_ACCOUNTS_QUOTA" in e:
+        return "Mọi tài khoản Flow đã hết lượt hôm nay. Thêm tài khoản (Chrome profile khác) hoặc chờ reset."
     if "QUOTA" in e:
-        return "Hết hạn mức model này hôm nay. Thử model khác (NANO_BANANA_2_1 / NANO_BANANA_2 / LITE)."
+        return "Hết hạn mức hôm nay. Bật tự đổi tài khoản (set_account_auto_switch) hoặc thử model khác."
     if "UNSAFE" in e or "FILTER" in e or "POLICY" in e:
         return "Bị bộ lọc nội dung của Google chặn. Sửa prompt hoặc ảnh tham chiếu."
     if "EXTENSION" in e or "NOT_CONNECTED" in e or "WS" in e:
@@ -423,7 +429,18 @@ async def flowboard_status() -> dict:
         sync = await fb.get("/api/sync")
     except FlowboardError:
         sync = None
+    try:
+        acc = await fb.get("/api/accounts")
+        accounts = {
+            "auto_switch": acc.get("auto_rotate"),
+            "active": acc.get("active"),
+            "list": [{"email": a.get("key"), "connected": a.get("connected"),
+                      "out_of_quota": a.get("exhausted")} for a in acc.get("accounts", [])],
+        }
+    except FlowboardError:
+        accounts = None
     return {
+        "flow_accounts": accounts,
         "agent": fb.base_url,
         "extension_connected": health.get("extension_connected"),
         "account": me,
@@ -432,6 +449,38 @@ async def flowboard_status() -> dict:
         "export_folder": str(EXPORT_DIR),
         "ui_live_sync": sync is not None,
     }
+
+
+# ── Google Flow accounts ─────────────────────────────────────────────────
+
+
+@mcp.tool(annotations=READ)
+async def list_flow_accounts() -> dict:
+    """Google Flow accounts connected to Flowboard (one per Chrome profile
+    running the extension): which one is in use, which are out of today's
+    quota, and whether automatic switching is on."""
+    return await fb.get("/api/accounts")
+
+
+@mcp.tool(annotations=WRITE)
+async def use_flow_account(email: Optional[str] = None) -> dict:
+    """Prefer this Google Flow account for the next jobs (null = automatic).
+    With automatic switching on, a preferred account that runs out of quota
+    is still skipped."""
+    return await fb.post("/api/accounts/select", json={"key": email})
+
+
+@mcp.tool(annotations=WRITE)
+async def set_account_auto_switch(enabled: bool) -> dict:
+    """Turn automatic account switching on/off. On: an image job that hits
+    the daily quota is re-run on the next account."""
+    return await fb.post("/api/accounts/settings", json={"auto_rotate": enabled})
+
+
+@mcp.tool(annotations=WRITE)
+async def reset_account_quota(email: Optional[str] = None) -> dict:
+    """Clear the "out of quota" mark on one account (or all when email is null)."""
+    return await fb.post("/api/accounts/reset", json={"key": email})
 
 
 # ── boards ───────────────────────────────────────────────────────────────

@@ -200,6 +200,12 @@ async def _ingest_image_bytes(
             status_code=502,
             detail={"message": "invalid media_id from Flow", "raw": resp.get("raw")},
         )
+    try:
+        from flowboard.services import account_projects
+
+        account_projects.record_media([media_id], account_projects.current_account())
+    except Exception:  # noqa: BLE001
+        logger.exception("record_media failed for upload")
     ext = _EXT_BY_MIME.get(mime, ".bin")
     cache_path = media_service.MEDIA_CACHE_DIR / f"{media_id}{ext}"
     try:
@@ -236,6 +242,16 @@ async def _ingest_image_bytes(
     return out
 
 
+async def _project_for_account(project_id: str, node_id: Optional[int]) -> str:
+    try:
+        from flowboard.services import account_projects
+
+        return await account_projects.project_for_current(project_id, node_id) or project_id
+    except Exception:  # noqa: BLE001
+        logger.exception("project_for_current failed; using the given project")
+        return project_id
+
+
 @router.post("/upload")
 async def upload_image(
     project_id: str = Form(...),
@@ -265,6 +281,7 @@ async def upload_image(
         )
 
     file_name = file.filename or f"upload{_EXT_BY_MIME.get(mime, '')}"
+    project_id = await _project_for_account(project_id, node_id)
     out = await _ingest_image_bytes(raw, mime, project_id, file_name, node_id)
     logger.info("upload: media_id=%s size=%d mime=%s", out["media_id"], size, mime)
     return out
@@ -335,7 +352,8 @@ async def upload_image_from_url(body: UrlUploadBody):
     if "." not in path_name:
         path_name = path_name + _EXT_BY_MIME.get(mime, "")
 
-    out = await _ingest_image_bytes(raw, mime, body.project_id, path_name, body.node_id)
+    project_id = await _project_for_account(body.project_id, body.node_id)
+    out = await _ingest_image_bytes(raw, mime, project_id, path_name, body.node_id)
     logger.info(
         "upload-url: media_id=%s size=%d mime=%s host=%s",
         out["media_id"], size, mime, parsed.netloc,

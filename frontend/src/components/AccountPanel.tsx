@@ -74,8 +74,9 @@ export function AccountPanel({ collapsed = false }: { collapsed?: boolean }) {
         setStorePaygateTier({ paygateTier: null });
         setPollsWithoutTier((n) => n + 1);
       }
-      if (me?.email && me?.paygate_tier) return;
-      timer = setTimeout(poll, 5000);
+      // Keep a slow poll once complete: with several Google accounts the
+      // one in use can change (automatic switch when one runs out).
+      timer = setTimeout(poll, me?.email && me?.paygate_tier ? 8000 : 5000);
     };
     poll();
     return () => {

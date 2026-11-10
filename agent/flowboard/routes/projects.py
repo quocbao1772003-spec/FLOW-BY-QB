@@ -11,7 +11,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from flowboard.db import get_session
-from flowboard.db.models import Board, BoardFlowProject
+from flowboard.db.models import Board, BoardAccountProject, BoardFlowProject
+from flowboard.services import account_projects
 from flowboard.services.flow_sdk import get_flow_sdk, is_valid_project_id
 
 logger = logging.getLogger(__name__)
@@ -24,23 +25,25 @@ def get_board_project(board_id: int):
     with get_session() as s:
         if not s.get(Board, board_id):
             raise HTTPException(404, "board not found")
-        row = s.get(BoardFlowProject, board_id)
-        if row is None:
-            raise HTTPException(404, "no project bound to this board")
-        return {"flow_project_id": row.flow_project_id, "created": False}
+    pid = account_projects.bound_project(board_id, account_projects.current_account())
+    if pid is None:
+        raise HTTPException(404, "no project bound to this board")
+    return {"flow_project_id": pid, "created": False}
 
 
 @router.post("/{board_id}/project")
 async def ensure_board_project(board_id: int):
-    # Cheap path: DB hit only.
+    # Cheap path: DB hit only. With several Google accounts connected each
+    # account gets its own project for the board (projects are per account).
+    account = account_projects.current_account()
     with get_session() as s:
         board = s.get(Board, board_id)
         if not board:
             raise HTTPException(404, "board not found")
-        row = s.get(BoardFlowProject, board_id)
-        if row is not None:
-            return {"flow_project_id": row.flow_project_id, "created": False}
         board_name = board.name
+    existing_pid = account_projects.bound_project(board_id, account)
+    if existing_pid is not None:
+        return {"flow_project_id": existing_pid, "created": False}
 
     # Release the session before the extension round-trip.
     resp = await get_flow_sdk().create_project(title=board_name or "Untitled")
@@ -69,13 +72,16 @@ async def ensure_board_project(board_id: int):
         )
 
     # Persist. Guard against concurrent callers that may have beaten us to it.
+    raced = account_projects.bound_project(board_id, account)
+    if raced is not None:
+        return {"flow_project_id": raced, "created": False}
     with get_session() as s:
-        existing = s.get(BoardFlowProject, board_id)
-        if existing is not None:
-            return {"flow_project_id": existing.flow_project_id, "created": False}
-        row = BoardFlowProject(board_id=board_id, flow_project_id=flow_project_id)
-        s.add(row)
+        if s.get(BoardFlowProject, board_id) is None:
+            s.add(BoardFlowProject(board_id=board_id, flow_project_id=flow_project_id))
+        else:
+            s.add(BoardAccountProject(board_id=board_id, account=account or "",
+                                      flow_project_id=flow_project_id))
         s.commit()
-        s.refresh(row)
-        logger.info("bound board %s → flow_project %s", board_id, flow_project_id)
-        return {"flow_project_id": row.flow_project_id, "created": True}
+    account_projects.record_project(flow_project_id, account)
+    logger.info("bound board %s → flow_project %s (account %s)", board_id, flow_project_id, account)
+    return {"flow_project_id": flow_project_id, "created": True}

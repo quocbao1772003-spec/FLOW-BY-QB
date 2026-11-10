@@ -2,6 +2,9 @@
 
 Kept separate from the FastAPI :8101 app to match flowkit's pattern — the
 extension's `background.js` connects to `ws://127.0.0.1:9223` only.
+
+Every Chrome profile running the extension is one Google Flow account; all
+of them may be connected at once (see account_pool.py).
 """
 from __future__ import annotations
 
@@ -12,7 +15,7 @@ import logging
 import websockets
 
 from flowboard.config import EXTENSION_WS_PORT, WS_HOST
-from flowboard.services.flow_client import flow_client
+from flowboard.services.flow_client import account_pool as pool
 
 logger = logging.getLogger(__name__)
 
@@ -34,23 +37,24 @@ async def _handler(websocket) -> None:
     except (asyncio.TimeoutError, ValueError, websockets.ConnectionClosed):
         await websocket.close(code=4002, reason="Bridge handshake required")
         return
-    if not flow_client.set_extension(websocket, instance_id=hello["instanceId"], version=hello["version"]):
-        await websocket.send(json.dumps({"type": "bridge_rejected", "error": "ANOTHER_PROFILE_SELECTED"}))
-        await websocket.close(code=4003, reason="Another browser profile owns this agent session")
+    client = pool.attach(websocket, hello["instanceId"], hello["version"])
+    if client is None:
+        await websocket.send(json.dumps({"type": "bridge_rejected", "error": "BRIDGE_BUSY"}))
+        await websocket.close(code=4003, reason="Bridge slot busy")
         return
-    logger.info("extension connected from %s", getattr(websocket, "remote_address", "?"))
+    logger.info("extension connected (profile %s…)", hello["instanceId"][:8])
 
     # Hand the extension the secret it needs to authenticate HTTP callbacks.
     try:
         await websocket.send(
-            json.dumps({"type": "callback_secret", "secret": flow_client.callback_secret})
+            json.dumps({"type": "callback_secret", "secret": client.callback_secret})
         )
     except Exception:  # noqa: BLE001
         logger.exception("failed to send callback_secret")
 
     try:
         async for raw in websocket:
-            if not flow_client.owns_extension(websocket):
+            if not client.owns_extension(websocket):
                 break
             try:
                 data = json.loads(raw)
@@ -58,14 +62,16 @@ async def _handler(websocket) -> None:
                 logger.warning("invalid JSON from extension")
                 continue
             try:
-                await flow_client.handle_message(data)
+                await client.handle_message(data)
+                if isinstance(data, dict) and data.get("type") == "user_info":
+                    pool.note_identity(client)
             except Exception:  # noqa: BLE001
                 logger.exception("error handling extension message")
     except websockets.ConnectionClosed:
         pass
     finally:
-        flow_client.clear_extension(websocket)
-        logger.info("extension disconnected")
+        pool.detach(websocket)
+        logger.info("extension disconnected (profile %s…)", hello["instanceId"][:8])
 
 
 async def run_ws_server() -> None:

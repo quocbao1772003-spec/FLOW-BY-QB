@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useViewStore, type AppView } from "../store/view";
 import { AccountPanel } from "./AccountPanel";
+import { AccountSwitcher } from "./AccountSwitcher";
 import {
   IconFrame,
   IconGridLayout,
@@ -82,6 +83,7 @@ export function AppSidebar() {
       </nav>
 
       <div className="app-sidebar__bottom">
+        <AccountSwitcher collapsed={collapsed} />
         <AccountPanel collapsed={collapsed} />
       </div>
     </div>

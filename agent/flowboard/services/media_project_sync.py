@@ -100,6 +100,7 @@ async def ensure_media_in_project(
     new_media_id = resp.get("media_id")
     if not isinstance(new_media_id, str) or not new_media_id:
         raise MediaSyncError("flow upload returned no media_id")
+    _note_owner(new_media_id)
 
     # 4) Persist the mapping. UniqueConstraint may race on parallel
     #    syncs of the same ref — swallow IntegrityError and re-read.
@@ -223,7 +224,17 @@ def substitute_cached(media_ids: list[str], project_id: str) -> list[str]:
     return out
 
 
+def _note_owner(media_id: str) -> None:
+    try:
+        from flowboard.services import account_projects
+
+        account_projects.record_media([media_id], account_projects.current_account())
+    except Exception:  # noqa: BLE001
+        logger.debug("record_media failed for %s", media_id)
+
+
 def _upsert_mapping(original_media_id: str, project_id: str, new_media_id: str) -> None:
+    _note_owner(new_media_id)
     with get_session() as s:
         row = s.exec(
             select(MediaProjectMapping)

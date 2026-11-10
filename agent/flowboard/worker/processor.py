@@ -124,31 +124,32 @@ async def _handle_create_project(params: dict) -> tuple[dict, Optional[str]]:
     return resp, None
 
 
-_image_session_project: Optional[str] = None
-_image_session_owner: Optional[str] = None
+# One Flow project per Google account per app session for image generation.
+_image_sessions: dict[str, str] = {}
 _image_session_lock: Optional[asyncio.Lock] = None
 
 
 def reset_image_project_session() -> None:
-    global _image_session_project, _image_session_owner, _image_session_lock
-    _image_session_project = None
-    _image_session_owner = None
+    global _image_session_lock
+    _image_sessions.clear()
     _image_session_lock = None
 
 
 async def _new_image_project(ref_ids: list[str]) -> dict:
-    """Create lazily once per app session; sync references into that project."""
-    global _image_session_project, _image_session_owner, _image_session_lock
+    """Create lazily once per app session and account; sync references into
+    that project (re-uploading from the local cache when they live in another
+    project or another account)."""
+    global _image_session_lock
+    from flowboard.services import account_projects
     from flowboard.services.flow_sdk import is_valid_project_id
     from flowboard.services.media_project_sync import ensure_media_ids_in_project
 
     if _image_session_lock is None:
         _image_session_lock = asyncio.Lock()
     async with _image_session_lock:
-        owner = (flow_client.user_info or {}).get("email")
-        if _image_session_owner and owner and owner != _image_session_owner:
-            _image_session_project = None
-        if _image_session_project is None:
+        account = account_projects.current_account() or "_"
+        project_id = _image_sessions.get(account)
+        if project_id is None:
             created = await get_flow_sdk().create_project(
                 "Flowboard Session " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 "PINHOLE",
@@ -156,15 +157,50 @@ async def _new_image_project(ref_ids: list[str]) -> dict:
             project_id = created.get("project_id")
             if created.get("error") or not isinstance(project_id, str) or not is_valid_project_id(project_id):
                 return {"error": "NEW_IMAGE_PROJECT_FAILED: " + str(created.get("error") or "invalid_project_id"), "raw": created}
-            _image_session_project = project_id
-        if owner:
-            _image_session_owner = owner
-        project_id = _image_session_project
+            _image_sessions[account] = project_id
+            account_projects.record_project(project_id, None if account == "_" else account)
     synced, failures = await ensure_media_ids_in_project(ref_ids, project_id)
     if failures or len(synced) != len(ref_ids):
         return {"project_id": project_id, "sync_failures": failures,
                 "error": "NEW_IMAGE_PROJECT_REF_SYNC_FAILED: " + str(failures)[:150]}
     return {"project_id": project_id, "ref_media_ids": synced}
+
+
+async def _project_for_this_account(params: dict, project_id: str) -> tuple[str, Optional[str]]:
+    """Video jobs arrive with the board's project id from the UI. If that
+    project belongs to another Google account than the one this job runs on,
+    switch to (or create) the board's project for this account."""
+    from flowboard.db.models import Node
+    from flowboard.services import account_projects
+
+    if account_projects.project_usable(project_id):
+        return project_id, None
+    node_id = params.get("__node_id")
+    board_id = None
+    if isinstance(node_id, int):
+        with get_session() as s:
+            node = s.get(Node, node_id)
+            board_id = node.board_id if node else None
+    if board_id is None:
+        return project_id, None
+    try:
+        pid, _ = await account_projects.ensure_board_project(board_id)
+        return pid, None
+    except Exception as exc:  # noqa: BLE001
+        return project_id, f"account_project_failed: {exc}"[:200]
+
+
+async def _media_for_project(media_ids: list[str], project_id: str) -> tuple[list[str], Optional[str]]:
+    """Make start images from another account usable in ``project_id``."""
+    from flowboard.services import account_projects
+    from flowboard.services.media_project_sync import ensure_media_ids_in_project
+
+    if all(account_projects.media_usable(m) for m in media_ids):
+        return media_ids, None
+    synced, failures = await ensure_media_ids_in_project(media_ids, project_id)
+    if failures or len(synced) != len(media_ids):
+        return media_ids, "START_IMAGE_SYNC_FAILED: " + str(failures)[:150]
+    return synced, None
 
 
 async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
@@ -310,13 +346,23 @@ async def _handle_gen_video(params: dict) -> tuple[dict, Optional[str]]:
     if not isinstance(video_quality, str) or not video_quality.strip():
         video_quality = None
 
+    project_id, perr = await _project_for_this_account(params, project_id)
+    if perr:
+        return {}, perr
+    single = start_media_id.strip() if isinstance(start_media_id, str) and start_media_id.strip() else None
+    starts, serr = await _media_for_project(start_media_ids or ([single] if single else []), project_id)
+    if serr:
+        return {}, serr
+    if start_media_ids:
+        start_media_ids = starts
+    else:
+        single = starts[0] if starts else single
+
     sdk = get_flow_sdk()
     dispatch = await sdk.gen_video(
         prompt=prompt.strip(),
         project_id=project_id,
-        start_media_id=start_media_id.strip()
-        if isinstance(start_media_id, str) and start_media_id.strip()
-        else None,
+        start_media_id=single,
         start_media_ids=start_media_ids,
         aspect_ratio=aspect,
         paygate_tier=tier,
@@ -598,6 +644,10 @@ async def _handle_gen_video_omni(params: dict) -> tuple[dict, Optional[str]]:
     if tier is None:
         return {}, "paygate_tier_unknown"
 
+    project_id, perr = await _project_for_this_account(params, project_id)
+    if perr:
+        return {}, perr
+
     # ── Cross-project ref sync ────────────────────────────────────────
     # Flow scopes mediaIds to the project they were uploaded in. When
     # the user references media generated under another board's project
@@ -844,6 +894,7 @@ class WorkerController:
                 req.status = "running"
                 s.add(req)
                 s.commit()
+                req_type = req.type
                 params = dict(req.params or {})
                 # Enrich with the request's node_id so handlers that need
                 # to look up Node.data don't depend on the caller copying
@@ -856,7 +907,7 @@ class WorkerController:
                 params["__request_id"] = rid
 
             # Release the session during the possibly-long RPC.
-            result, err = await handler(params)
+            result, err = await _run_on_accounts(handler, req_type, params)
 
             with get_session() as s:
                 req = s.get(Request, rid)
@@ -903,6 +954,59 @@ class WorkerController:
             except Exception:  # noqa: BLE001
                 logger.exception("worker: node finalize failed for rid=%s", rid)
             self._active -= 1
+
+
+# ── Several Google Flow accounts ──────────────────────────────────────────
+# A job runs start to finish on one account (project, uploads, generation and
+# polling all have to happen under the same Google login). Image jobs that
+# fail because the account is out of today's quota — the extension only says
+# so after trying every image model on it — are re-run on the next account.
+_ROTATING_TYPES = {"gen_image", "edit_image"}
+
+
+async def _run_on_accounts(handler: Handler, req_type: str, params: dict) -> tuple[dict, Optional[str]]:
+    from flowboard.services import account_projects
+    from flowboard.services.account_pool import is_quota_error
+    from flowboard.services.flow_client import account_pool
+
+    client = account_pool.current()
+    tried: list[str] = []
+    switched: list[dict] = []
+    while True:
+        key = account_pool.key_of(client) if client.connected else None
+        with account_pool.pin(client):
+            result, err = await handler(dict(params))
+        if (
+            err
+            and key
+            and req_type in _ROTATING_TYPES
+            and is_quota_error(err)
+        ):
+            account_pool.mark_exhausted(client, err)
+            tried.append(key)
+            nxt = account_pool.next_account(set(tried))
+            if nxt is not None:
+                nkey = account_pool.key_of(nxt)
+                logger.info("account %s out of quota — retrying on %s", key, nkey)
+                switched.append({"from": key, "to": nkey, "reason": str(err)[:160]})
+                client = nxt
+                continue
+            if len(tried) > 1 or account_pool.connected_clients()[1:]:
+                err = f"ALL_ACCOUNTS_QUOTA: tất cả tài khoản Flow đã hết lượt hôm nay ({', '.join(tried)}) — {err}"
+        break
+    if isinstance(result, dict):
+        result = dict(result)
+        if key:
+            result["flow_account"] = key
+        if switched:
+            result["account_switches"] = switched
+        if not err and key:
+            ids = list(result.get("media_ids") or [])
+            try:
+                account_projects.record_media(ids, key)
+            except Exception:  # noqa: BLE001
+                logger.exception("record_media failed")
+    return result, err
 
 
 # ── Node finalize for headless dispatches (MCP / API) ─────────────────────
@@ -963,6 +1067,8 @@ def finalize_node_for_request(rid: int) -> bool:
                 else:
                     data.pop("error", None)
                 data.pop("aiBrief", None)
+                if result.get("flow_account"):
+                    data["flowAccount"] = result["flow_account"]
                 if req.type in ("gen_image", "edit_image") and params.get("image_model"):
                     data["imageModel"] = params["image_model"]
                 if req.type == "gen_video" and params.get("video_quality"):
