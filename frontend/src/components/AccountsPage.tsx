@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { IconRefresh } from "../canvas/icons";
 import { ChromePairing } from "./ChromePairing";
+import { ConnectGuide } from "./ConnectGuide";
 import { useSessionStore } from "../store/session";
 
 // "Tài khoản Flow" tab — every Google Flow account connected through a
@@ -331,6 +332,7 @@ export function AccountsPage() {
         </p>
       )}
 
+      {authRequired && <ConnectGuide defaultOpen={accounts.length === 0} />}
       <ChromePairing />
 
       <div className="accounts-section__head">
