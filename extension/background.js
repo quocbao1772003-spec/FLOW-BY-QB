@@ -2016,14 +2016,22 @@ async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, gr
   const order = fresh.length ? fresh : chain;
   const refused = [];
   let last = null;
+  let rejected = null;
   for (const model of order) {
     const r = await boqRunOneWithFallback(tabId, projectId, prompt, mediaInputs, groupId,
                                           Object.assign({}, job, { model: boqResolveModelTag(model) }));
     if (r && r.reason === 'PUBLIC_ERROR_UNUSUAL_ACTIVITY') return r;
     // A stand-in model this account can't use (rejected outright, no credits
     // spent) — just move on to the next one.
-    if (model !== preferred && r && /^RPC_(3|5|7|9)_/.test(String(r.error)) && !boqIsQuota(r)) {
-      console.warn('[Flowboard] fallback model ' + boqModelLabel(model) + ' rejected (' + r.error + ') — skipping');
+    // A model this account can't use (rejected outright, no credits spent) —
+    // move on to the next one. This includes the model the user picked:
+    // Google retires model tags without notice (Nano Banana 2 / NARWHAL now
+    // answers NOT_FOUND even with no references), and failing the whole job
+    // there is worse than rendering on the next model. A genuinely missing
+    // reference fails on every model, so the final error is unchanged.
+    if (r && /^RPC_(3|5|7|9)_/.test(String(r.error)) && !boqIsQuota(r)) {
+      console.warn('[Flowboard] model ' + boqModelLabel(model) + ' rejected (' + r.error + ') — trying next model');
+      if (!rejected) rejected = r;
       continue;
     }
     if (!boqIsQuota(r)) {
@@ -2039,6 +2047,10 @@ async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, gr
     if (!r.reason || /DAILY/.test(r.reason)) { boqSpentModels[model] = Date.now(); boqSaveSpent(); }
     console.warn('[Flowboard] ' + boqModelLabel(model) + ' refused (' + (r.reason || r.error) + ') — trying next model');
   }
+  // Nothing rendered. Only call it a quota problem when a model actually said
+  // so; otherwise surface the first outright rejection (e.g. NOT_FOUND for a
+  // missing reference, which the agent answers by re-uploading the refs).
+  if (!last && rejected) return rejected;
   return Object.assign({}, last, { error: 'QUOTA_DAILY', models: refused });
 }
 
