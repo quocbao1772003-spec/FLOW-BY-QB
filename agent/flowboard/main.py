@@ -1,11 +1,16 @@
 import asyncio
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Header, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 
 from flowboard.config import WS_HOST
+
+# Slim Docker images ship no /etc/mime.types: register what the UI serves.
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/svg+xml", ".svg")
 from flowboard.db import get_session, init_db
 from flowboard.db.models import Request
 from flowboard.routes import activity, ai_chat, assets, assistant, auth, boards, chat, edges, flow_projects, llm, media, nodes, plans, projects, prompt, upload, upscale, vision
