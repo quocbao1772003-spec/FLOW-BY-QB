@@ -57,6 +57,18 @@ export function FlowsPage() {
     if (busy) return;
     setBusy(true);
     try {
+      if (/\.zip$/i.test(file.name)) {
+        // Whole local Flowboard (XUAT-FLOW.bat): flows + images, owned by me.
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/flows/import-zip", { method: "POST", body: fd });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${res.status}`);
+        const got = (body.boards ?? []) as { id: number; name: string }[];
+        await refreshBoardList();
+        window.alert(`Đã nhập ${got.length} flow và ${body.media_added ?? 0} ảnh:\n` + got.map((b) => "• " + b.name).join("\n"));
+        return;
+      }
       const text = await file.text();
       const json = JSON.parse(text);
       const newId = await importFlow(json);
@@ -109,7 +121,7 @@ export function FlowsPage() {
             className="footer-tab"
             onClick={() => importInputRef.current?.click()}
             disabled={busy}
-            title="Nhập flow từ file .flow.json"
+            title="Nhập flow: file .flow.json, hoặc flowboard-export.zip (XUAT-FLOW.bat từ app trên máy)"
             style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px" }}
           >
             <IconUpload size={13} /> Import
@@ -120,7 +132,7 @@ export function FlowsPage() {
           <input
             ref={importInputRef}
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,application/zip,.zip"
             style={{ display: "none" }}
             onChange={(e) => {
               const f = e.target.files?.[0];

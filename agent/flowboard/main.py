@@ -14,6 +14,7 @@ from flowboard.routes import accounts as accounts_route
 from flowboard.routes import session as session_route
 from flowboard.routes import users as users_route
 from flowboard.routes import templates as templates_route
+from flowboard.routes import flow_import as flow_import_route
 from flowboard.services import users as users_svc
 from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
@@ -219,6 +220,7 @@ app.include_router(accounts_route.router)
 app.include_router(session_route.router)
 app.include_router(users_route.router)
 app.include_router(templates_route.router)
+app.include_router(flow_import_route.router)
 
 
 from fastapi import WebSocket as _WebSocket  # noqa: E402
