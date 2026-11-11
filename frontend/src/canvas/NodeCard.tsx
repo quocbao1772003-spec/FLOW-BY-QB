@@ -90,7 +90,9 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
   const [pickerOpen, setPickerOpen] = useState(false);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
+    const renderedAt = new Date().toISOString();
     useBoardStore.getState().updateNodeData(rfId, {
+      renderedAt,
       mediaId: newMediaId,
       status: "done",
       aiBrief: undefined,
@@ -108,7 +110,7 @@ function CharacterBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }
           mediaId: newMediaId,
           aiBrief: null,
           aspectRatio,
-          renderedAt: new Date().toISOString(),
+          renderedAt,
         },
       }).catch(() => {});
     }
@@ -664,7 +666,9 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
+    const renderedAt = new Date().toISOString();
     useBoardStore.getState().updateNodeData(rfId, {
+      renderedAt,
       mediaId: newMediaId,
       mediaIds: undefined,
       variantCount: 1,
@@ -685,7 +689,7 @@ function ImageBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
           variantCount: 1,
           aiBrief: null,
           aspectRatio,
-          renderedAt: new Date().toISOString(),
+          renderedAt,
         },
       }).catch(() => {});
     }
@@ -1206,7 +1210,9 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
   const refInputRef = useRef<HTMLInputElement>(null);
 
   function persistMedia(newMediaId: string, aspectRatio?: string) {
+    const renderedAt = new Date().toISOString();
     useBoardStore.getState().updateNodeData(rfId, {
+      renderedAt,
       mediaId: newMediaId,
       mediaIds: [newMediaId],
       variantCount: 1,
@@ -1227,7 +1233,7 @@ function VisualAssetBody({ rfId, data }: { rfId: string; data: FlowboardNodeData
           variantCount: 1,
           aiBrief: null,
           aspectRatio,
-          renderedAt: new Date().toISOString(),
+          renderedAt,
         },
       }).catch(() => {});
     }

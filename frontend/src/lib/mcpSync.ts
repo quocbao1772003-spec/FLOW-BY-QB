@@ -10,29 +10,49 @@ import { useViewStore } from "../store/view";
 
 interface SyncSnapshot {
   rev: number;
+  board_ids?: number[];
   focus_board_id: number | null;
   focus_seq: number;
+}
+
+// Fields a generation writes onto its node. The UI holds the fresh values in
+// memory first and persists them with a PATCH a moment later; a reload that
+// lands in between would read the OLD image from the server and show the
+// previous result instead of the new one.
+const MEDIA_FIELDS = [
+  "mediaId", "mediaIds", "slotErrors", "variantCount", "aspectRatio",
+  "renderedAt", "imageModel", "videoQuality", "flowAccount", "error", "prompt",
+] as const;
+
+function isNewer(local: unknown, server: unknown): boolean {
+  if (typeof local !== "string" || !local) return false;
+  if (typeof server !== "string" || !server) return true;
+  return Date.parse(local) > Date.parse(server);
 }
 
 async function reloadKeepingLocalState() {
   const store = useBoardStore.getState();
   const prev = new Map(store.nodes.map((n) => [n.id, n]));
-  const active = useGenerationStore.getState().active;
   await store.refreshBoardState();
-  // Keep selection and the in-memory status of generations the UI itself
-  // is still polling (those aren't persisted until they finish).
+  // Read `active` AFTER the fetch: a generation may have finished while the
+  // request was in flight.
+  const active = useGenerationStore.getState().active;
   useBoardStore.setState((s) => ({
     nodes: s.nodes.map((n) => {
       const old = prev.get(n.id);
       if (!old) return n;
       const next = { ...n, selected: old.selected };
-      if (active[n.id]) {
-        next.data = {
-          ...n.data,
-          status: old.data.status,
-          variantCount: old.data.variantCount,
-          prompt: old.data.prompt ?? n.data.prompt,
-        };
+      // Still generating in this tab, or finished here more recently than
+      // what the server has: the local copy is the truth — keep it whole so
+      // the node neither flips back to the previous image nor feeds a stale
+      // image as reference into the next node.
+      const keepLocal = !!active[n.id]
+        || isNewer(old.data.renderedAt, n.data.renderedAt);
+      if (keepLocal) {
+        const data: Record<string, unknown> = { ...n.data };
+        for (const k of MEDIA_FIELDS) data[k] = (old.data as Record<string, unknown>)[k];
+        data.status = old.data.status;
+        next.data = data as typeof n.data;
       }
       return next;
     }),
@@ -62,7 +82,12 @@ export function useMcpSync() {
             }
             const view = useViewStore.getState();
             if (view.view !== "canvas") view.setView("canvas");
-          } else if (rev !== null && snap.rev !== rev && store.boardId !== null) {
+          } else if (
+            rev !== null && snap.rev !== rev && store.boardId !== null
+            // Only reload for a change on the board that is open here (an
+            // empty list means "unknown", so reload to be safe).
+            && (!snap.board_ids?.length || snap.board_ids.includes(store.boardId))
+          ) {
             await reloadKeepingLocalState();
           }
           rev = snap.rev;
