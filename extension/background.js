@@ -371,7 +371,9 @@ function connectToAgent(force = false) {
 
 function scheduleReconnect() {
   if (manualDisconnect) return;
-  const delayMs = Math.min(30000 * 2 ** Math.min(reconnectAttempts++, 3), 240000);
+  // Fast retry (2s, 4s, 8s, then every 15s): a restarted local agent is back
+  // within seconds, and every second waiting here stalls the whole job queue.
+  const delayMs = Math.min(2000 * 2 ** Math.min(reconnectAttempts++, 3), 15000);
   reconnectAt = Date.now() + delayMs;
   chrome.alarms.create('reconnect', { when: reconnectAt });
 }
@@ -1221,6 +1223,8 @@ async function pushIdentityFromFlowTab(force, tabId) {
     const accountSession = email.toLowerCase() + ':' + identity.session;
     if (boqAccountSession !== accountSession) {
       for (const model of Object.keys(boqSpentModels)) delete boqSpentModels[model];
+      boqAccountSession = accountSession;
+      if (typeof boqSaveSpent === 'function') boqSaveSpent();
       // A stored legacy Bearer token may belong to the previous account.
       flowKey = null;
       chrome.storage.local.remove('flowKey');
@@ -1774,6 +1778,14 @@ async function boqUpscaleInPage(cfg) {
 /** A tab already sitting on a Flow *project* page — that page is the only
  *  one carrying the AiSandboxAngularFrontend build label. flow.google.com
  *  root and /about are a different boq app and would send a wrong `bl`. */
+/** Stop Chrome from discarding the Flow tab in the background: a discarded
+ *  tab must be reloaded (+2.5s, then the app re-boots) before every job. */
+function boqKeepTabAlive(tab) {
+  if (tab && tab.id != null && tab.autoDiscardable !== false) {
+    chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
+  }
+}
+
 async function boqFindProjectTab(projectId) {
   const tabs = await chrome.tabs.query({ url: 'https://flow.google.com/project/*' });
   const projectUrl = 'https://flow.google.com/project/' + encodeURIComponent(projectId);
@@ -1785,13 +1797,15 @@ async function boqFindProjectTab(projectId) {
   const existing = boqChooseTab(matching);
   if (existing) {
     const live = await reviveTabIfNeeded(existing);
-    if (live) return live;
+    if (live) { boqKeepTabAlive(live); return live; }
   }
   try {
-    return await chrome.tabs.create({
+    const created = await chrome.tabs.create({
       url: projectUrl,
       active: false,
     });
+    boqKeepTabAlive(created);
+    return created;
   } catch (e) {
     console.error('[Flowboard] could not open a Flow project tab:', e);
     return null;
@@ -1965,6 +1979,22 @@ function boqResolveModelTag(model) {
 const BOQ_QUOTA_RECHECK_MS = 30 * 60 * 1000;  // retry a spent model after 30 min (refusals are free)
 const boqSpentModels = {};                    // model -> timestamp it was refused
 
+// The service worker sleeps and restarts often; keep spent models (and the
+// account they belong to) in session storage so a wake-up does not re-try every
+// exhausted model from scratch — each refusal is a full Flow round trip.
+function boqSaveSpent() {
+  try { chrome.storage.session.set({ boqSpent: { account: boqAccountSession, models: boqSpentModels } }); } catch (e) {}
+}
+try {
+  chrome.storage.session.get('boqSpent').then((v) => {
+    const saved = v && v.boqSpent;
+    if (!saved || !saved.models) return;
+    if (boqAccountSession && saved.account !== boqAccountSession) return;
+    if (!boqAccountSession) boqAccountSession = saved.account || null;
+    for (const [m, t] of Object.entries(saved.models)) if (!(m in boqSpentModels)) boqSpentModels[m] = t;
+  }).catch(() => {});
+} catch (e) {}
+
 function boqIsQuota(r) {
   if (!r || !r.error) return false;
   if (r.reason && /QUOTA/.test(r.reason)) return true;
@@ -1998,7 +2028,7 @@ async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, gr
     }
     if (!boqIsQuota(r)) {
       if (r && !r.error) {
-        delete boqSpentModels[model];
+        if (model in boqSpentModels) { delete boqSpentModels[model]; boqSaveSpent(); }
         r.modelUsed = model;
         if (model !== preferred) r.fallbackFrom = preferred;
       }
@@ -2006,7 +2036,7 @@ async function boqRunWithModelFallback(tabId, projectId, prompt, mediaInputs, gr
     }
     last = r;
     refused.push(model);
-    if (!r.reason || /DAILY/.test(r.reason)) boqSpentModels[model] = Date.now();
+    if (!r.reason || /DAILY/.test(r.reason)) { boqSpentModels[model] = Date.now(); boqSaveSpent(); }
     console.warn('[Flowboard] ' + boqModelLabel(model) + ' refused (' + (r.reason || r.error) + ') — trying next model');
   }
   return Object.assign({}, last, { error: 'QUOTA_DAILY', models: refused });

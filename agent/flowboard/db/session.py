@@ -16,6 +16,11 @@ engine = create_engine(
 def _enable_sqlite_fk(dbapi_conn, _connection_record) -> None:
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA foreign_keys=ON")
+    # WAL: UI polls (reads) no longer block the worker's writes and vice versa;
+    # busy_timeout waits instead of failing on a momentary lock.
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA busy_timeout=5000")
     cur.close()
 
 

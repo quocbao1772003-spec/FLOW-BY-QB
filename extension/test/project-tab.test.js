@@ -9,7 +9,7 @@ let tabs = [{ id: 1, active: true, url: 'https://flow.google.com/project/other' 
   { id: 2, url: 'https://flow.google.com/project/wanted?authuser=1' }];
 let created = [];
 const context = vm.createContext({ URL, console,
-  boqChooseTab: ts => ts[0] || null, reviveTabIfNeeded: async t => t,
+  boqChooseTab: ts => ts[0] || null, reviveTabIfNeeded: async t => t, boqKeepTabAlive: () => {},
   chrome: { tabs: { query: async () => tabs, create: async options => {
     created.push(options); return { id: 3, ...options };
   } } } });

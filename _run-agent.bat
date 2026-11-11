@@ -9,5 +9,5 @@ if not exist ".venv\Scripts\python.exe" (
 echo === Flowboard Agent dang chay tren http://127.0.0.1:8101 ===
 echo === Dong cua so nay de tat agent ===
 echo.
-".venv\Scripts\python.exe" -m uvicorn flowboard.main:app --reload --port 8101
+".venv\Scripts\python.exe" -m uvicorn flowboard.main:app --port 8101
 pause
