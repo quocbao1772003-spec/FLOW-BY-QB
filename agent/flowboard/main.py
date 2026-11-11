@@ -73,9 +73,21 @@ async def lifespan(app: FastAPI):
     ws_task = asyncio.create_task(run_ws_server(), name="ext-ws-server")
     worker_task = asyncio.create_task(worker.start(), name="request-worker")
     logger.info("flowboard agent started (ws:9223 + worker)")
+    # Hosted MCP (/mcp/<token>) needs its session manager running.
+    from contextlib import AsyncExitStack
+
+    stack = AsyncExitStack()
+    try:
+        from flowboard.mcp_mount import _inner, mcp_server
+
+        _inner()
+        await stack.enter_async_context(mcp_server().session_manager.run())
+    except Exception:  # noqa: BLE001 — MCP is optional; never block the app
+        logger.exception("hosted MCP disabled")
     try:
         yield
     finally:
+        await stack.aclose()
         worker.request_shutdown()
         try:
             await asyncio.wait_for(worker.drain(), timeout=5.0)
@@ -198,6 +210,9 @@ app.add_middleware(
 )
 app.add_middleware(_McpLiveSync)
 app.add_middleware(_AuthGate)
+from flowboard.mcp_mount import McpMount  # noqa: E402
+
+app.add_middleware(McpMount)
 
 app.include_router(boards.router)
 app.include_router(nodes.router)

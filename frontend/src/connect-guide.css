@@ -111,3 +111,11 @@ div.cg-mark { display: flex; }
 .cg-shot a:focus-visible { outline: 2px solid var(--accent-0); outline-offset: 2px; }
 .cg-shot img { display: block; width: 100%; height: auto; }
 .cg-shot figcaption { font-size: 11.5px; line-height: 1.45; color: var(--fg-3); }
+
+/* hosted MCP link box */
+.mcp-link { flex-direction: row; }
+.mcp-link__row { flex-basis: 100%; min-width: 0; overflow-wrap: anywhere; }
+.mcp-link__row code { user-select: all; }
+.mcp-link__how { flex-basis: 100%; margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--fg-2); }
+.mcp-link__how b { color: var(--fg-0); }
+.mcp-link__how code { font-family: var(--font-mono); font-size: 11.5px; }

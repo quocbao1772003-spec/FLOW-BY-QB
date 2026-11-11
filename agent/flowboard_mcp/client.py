@@ -5,6 +5,7 @@ live-sync revision and the open browser UI reloads the board.
 """
 from __future__ import annotations
 
+import contextvars
 import os
 from typing import Any, Optional
 
@@ -19,6 +20,11 @@ AGENT_URL = os.getenv("FLOWBOARD_URL", "http://127.0.0.1:8101").rstrip("/")
 # Personal MCP token (fbt_…) from the "Kết nối Chrome" box. Needed once the
 # Flowboard has user accounts (always the case on a team server).
 AGENT_TOKEN = os.getenv("FLOWBOARD_TOKEN", "").strip()
+# Hosted mode (MCP served by the Flowboard server itself at /mcp/<token>):
+# the token of the caller, set per request by flowboard.mcp_mount.
+request_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "flowboard_mcp_token", default=None
+)
 
 
 class FlowboardError(_ToolError):
@@ -62,8 +68,10 @@ class FlowboardClient:
         raw: bool = False,
     ) -> Any:
         try:
+            tok = request_token.get()
             resp = await self._http().request(
-                method.upper(), path, json=json, params=params, files=files, data=data
+                method.upper(), path, json=json, params=params, files=files, data=data,
+                headers={"Authorization": f"Bearer {tok}"} if tok else None,
             )
         except httpx.ConnectError as exc:
             raise FlowboardError(

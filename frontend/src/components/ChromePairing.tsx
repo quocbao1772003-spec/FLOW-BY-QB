@@ -81,19 +81,53 @@ export function ChromePairing() {
             Tạo mã ghép nối
           </button>
           <button type="button" className="accounts-btn" disabled={busy} onClick={() => void make("api")}>
-            Tạo token MCP
+            Tạo link MCP
           </button>
         </div>
-        {fresh && (
+        {fresh && fresh.kind === "bridge" && (
           <div className="team-secret">
             <span>
-              {fresh.kind === "bridge" ? "Mã ghép nối" : "Token MCP"}: <code>{fresh.token}</code>
+              Mã ghép nối: <code>{fresh.token}</code>
             </span>
             <span className="team-secret__note">Chỉ hiện một lần.</span>
             <button type="button" className="accounts-btn" onClick={() => copy(fresh.token, "fresh")}>
               {copied === "fresh" ? "Đã copy" : "Copy"}
             </button>
             <button type="button" className="accounts-btn" onClick={() => setFresh(null)}>Đóng</button>
+          </div>
+        )}
+        {fresh && fresh.kind === "api" && (
+          <div className="team-secret mcp-link">
+            <span className="mcp-link__row">
+              Link MCP: <code>{`${server}/mcp/${fresh.token}`}</code>
+            </span>
+            <span className="team-secret__note">
+              Chỉ hiện một lần. Giữ như mật khẩu: ai có link là điều khiển được Flowboard dưới tên anh chị.
+            </span>
+            <button type="button" className="page__cta" onClick={() => copy(`${server}/mcp/${fresh.token}`, "mcp")}>
+              {copied === "mcp" ? "✓ Đã copy" : "Copy link MCP"}
+            </button>
+            <button
+              type="button"
+              className="accounts-btn"
+              onClick={() => copy(`claude mcp add --transport http flowboard ${server}/mcp/${fresh.token}`, "cc")}
+            >
+              {copied === "cc" ? "✓ Đã copy" : "Copy lệnh Claude Code"}
+            </button>
+            <button type="button" className="accounts-btn" onClick={() => setFresh(null)}>Đóng</button>
+            <ol className="mcp-link__how">
+              <li>
+                <b>claude.ai / Claude Desktop:</b> Settings → Connectors → Add custom connector, đặt tên{" "}
+                <code>Flowboard</code>, dán link MCP, bấm Add.
+              </li>
+              <li>
+                <b>Claude Code:</b> dán lệnh Claude Code vào terminal, chạy một lần.
+              </li>
+              <li>
+                <b>ChatGPT:</b> Settings → Apps &amp; Connectors → Create, dán link MCP, chọn No authentication.
+              </li>
+              <li>Mất link hoặc lộ link: bấm Thu hồi ở dòng MCP bên dưới, rồi tạo token mới.</li>
+            </ol>
           </div>
         )}
         {(bridges.length > 0 || apis.length > 0) && (

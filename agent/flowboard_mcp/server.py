@@ -321,6 +321,12 @@ async def _thumb(media_id: str, max_size: int = 768) -> Optional[Image]:
 
 
 async def _wait(request_id: int, timeout_s: float) -> dict:
+    from flowboard_mcp.client import request_token
+
+    if request_token.get():
+        # Hosted behind Cloudflare: one HTTP response must finish < 100 s.
+        # The tool then returns the request_id and the AI keeps waiting.
+        timeout_s = min(timeout_s, 80.0)
     deadline = time.monotonic() + max(0.0, timeout_s)
     while True:
         req = await fb.get(f"/api/requests/{request_id}")
