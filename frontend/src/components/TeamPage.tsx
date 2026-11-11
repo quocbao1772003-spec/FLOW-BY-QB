@@ -20,7 +20,35 @@ export function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ username: "", display_name: "", password: "", role: "staff" });
-  const [secret, setSecret] = useState<{ who: string; password: string } | null>(null);
+  const [secret, setSecret] = useState<{ who: string; name: string; password: string } | null>(null);
+  const [copied, setCopied] = useState<"all" | "pw" | null>(null);
+
+  function handover(sec: { who: string; name: string; password: string }) {
+    return [
+      `Tài khoản Flowboard của ${sec.name}`,
+      `Link: ${window.location.origin}`,
+      `Tên đăng nhập: ${sec.who}`,
+      `Mật khẩu: ${sec.password}`,
+      "",
+      "Đăng nhập xong, bấm tên mình ở góc dưới bên trái → Đổi mật khẩu.",
+      "Sau đó vào trang Tài khoản Flow để nối Chrome (mã ghép nối + extension).",
+    ].join("\n");
+  }
+
+  async function copy(text: string, kind: "all" | "pw") {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(kind);
+    window.setTimeout(() => setCopied(null), 1800);
+  }
 
   async function load() {
     if (!authRequired) return;
@@ -54,7 +82,7 @@ export function TeamPage() {
         window.location.reload();
         return;
       }
-      setSecret({ who: r.user.username, password: r.password });
+      setSecret({ who: r.user.username, name: r.user.display_name || r.user.username, password: r.password });
       setForm({ username: "", display_name: "", password: "", role: "staff" });
       await load();
     } catch (err) {
@@ -68,7 +96,7 @@ export function TeamPage() {
     setBusy(true);
     try {
       const r = await updateUser(u.id, body);
-      if (r.password) setSecret({ who: u.username, password: r.password });
+      if (r.password) setSecret({ who: u.username, name: u.display_name || u.username, password: r.password });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -137,10 +165,15 @@ export function TeamPage() {
       {secret && (
         <div className="team-secret">
           <span>
-            Mật khẩu của <b>{secret.who}</b>: <code>{secret.password}</code>
+            <b>{secret.name}</b> · Tài khoản: <code>{secret.who}</code> · Mật khẩu: <code>{secret.password}</code>
           </span>
-          <span className="team-secret__note">Chỉ hiện một lần. Copy gửi cho nhân viên.</span>
-          <button type="button" className="accounts-btn" onClick={() => void navigator.clipboard?.writeText(secret.password)}>Copy</button>
+          <span className="team-secret__note">Mật khẩu chỉ hiện một lần. Bấm "Copy tài khoản + mật khẩu" rồi gửi cho nhân viên.</span>
+          <button type="button" className="page__cta" onClick={() => void copy(handover(secret), "all")}>
+            {copied === "all" ? "✓ Đã copy" : "Copy tài khoản + mật khẩu"}
+          </button>
+          <button type="button" className="accounts-btn" onClick={() => void copy(secret.password, "pw")}>
+            {copied === "pw" ? "✓ Đã copy" : "Chỉ mật khẩu"}
+          </button>
           <button type="button" className="accounts-btn" onClick={() => setSecret(null)}>Đóng</button>
         </div>
       )}
