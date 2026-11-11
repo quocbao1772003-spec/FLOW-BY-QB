@@ -11,7 +11,11 @@ services:
     ports:
       - "127.0.0.1:${FLOWBOARD_HOST_PORT:-8101}:8101"
 
+  # Own tunnel, only when TUNNEL_TOKEN is set (COMPOSE_PROFILES=tunnel).
+  # On a server that already runs cloudflared, deploy/install.sh plugs
+  # Flowboard into that tunnel instead.
   cloudflared:
+    profiles: ["tunnel"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run

@@ -27,6 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/quocbao1772003-spec/FLOW-BY-QB/main
 
 Script hỏi tên miền, Cloudflare Tunnel token (bước 2 bên dưới), tài khoản admin, rồi tự cài Docker, build và chạy.
 
+Nếu server đã có cloudflared đang chạy cho app khác, bỏ trống token. Script tự nối Flowboard vào tunnel đó và in ra dòng Service cần thêm vào Public Hostname của tunnel.
+
 - Mọi thứ nằm riêng trong `/opt/flowboard` và các container `flowboard-*`, không đụng app khác trên cùng server.
 - Chạy lại lệnh này bất cứ lúc nào để cập nhật bản mới.
 

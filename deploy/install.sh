@@ -42,8 +42,8 @@ mkdir -p storage
 
 if [ ! -f .env ]; then
   say "Cau hinh lan dau"
-  ask FLOWBOARD_DOMAIN "Ten mien cua Flowboard (vd flowboard.flowytb.com)"
-  ask TUNNEL_TOKEN "Cloudflare Tunnel token (Zero Trust > Networks > Tunnels)"
+  ask FLOWBOARD_DOMAIN "Ten mien cua Flowboard" "flowboard.flowytb.app"
+  ask TUNNEL_TOKEN "Token tunnel RIENG cho Flowboard (bo trong = dung chung tunnel dang chay tren server)"
   ask FLOWBOARD_ADMIN_USER "Ten dang nhap admin" "admin"
   ask FLOWBOARD_ADMIN_PASSWORD "Mat khau admin (bo trong = tu tao)"
   ask CLAUDE_CODE_OAUTH_TOKEN "Token Claude Code cho AI (claude setup-token, bo trong neu chua co)"
@@ -51,14 +51,56 @@ if [ ! -f .env ]; then
     FLOWBOARD_ADMIN_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 14)
     GENERATED_PW=1
   fi
+  PORT=8101
+  while ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${PORT}\$"; do PORT=$((PORT + 1)); done
   umask 077
   cat > .env <<EOF
+FLOWBOARD_HOST_PORT=${PORT}
+COMPOSE_PROFILES=${TUNNEL_TOKEN:+tunnel}
 FLOWBOARD_ADMIN_USER=${FLOWBOARD_ADMIN_USER}
 FLOWBOARD_ADMIN_PASSWORD=${FLOWBOARD_ADMIN_PASSWORD}
 FLOWBOARD_ALLOWED_ORIGINS=https://${FLOWBOARD_DOMAIN}
 TUNNEL_TOKEN=${TUNNEL_TOKEN}
 CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
 EOF
+fi
+
+# Plug into a cloudflared that already runs on this server (shared tunnel).
+HOST_PORT=$(sed -n 's/^FLOWBOARD_HOST_PORT=//p' .env); HOST_PORT=${HOST_PORT:-8101}
+SERVICE_URL=""
+if ! grep -q '^COMPOSE_PROFILES=tunnel' .env; then
+  CF=$(docker ps --format '{{.Names}} {{.Image}}' | grep -i cloudflared | grep -v '^flowboard-' | head -n1 | cut -d' ' -f1 || true)
+  if [ -n "$CF" ]; then
+    MODE=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$CF")
+    if [ "$MODE" = host ]; then
+      SERVICE_URL="http://localhost:${HOST_PORT}"
+      rm -f docker-compose.override.yml
+    else
+      NET=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CF" | awk '{print $1}')
+      cat > docker-compose.override.yml <<YML
+# Written by deploy/install.sh: joins the network of the existing
+# cloudflared container "$CF" so its tunnel can reach Flowboard.
+services:
+  flowboard:
+    networks:
+      default: {}
+      edge:
+        aliases: [flowboard-app]
+networks:
+  edge:
+    external: true
+    name: ${NET}
+YML
+      SERVICE_URL="http://flowboard-app:8101"
+    fi
+    echo "Dung chung cloudflared dang chay: $CF ($MODE)"
+  elif pgrep -x cloudflared >/dev/null 2>&1; then
+    SERVICE_URL="http://localhost:${HOST_PORT}"
+    rm -f docker-compose.override.yml
+    echo "Dung chung cloudflared cai tren may (khong phai Docker)"
+  else
+    echo "CANH BAO: khong thay cloudflared nao tren server va chua co TUNNEL_TOKEN."
+  fi
 fi
 
 say "Build va chay (lan dau mat vai phut)"
@@ -73,6 +115,11 @@ done
 
 DOMAIN=$(sed -n 's#^FLOWBOARD_ALLOWED_ORIGINS=https://##p' .env | cut -d, -f1)
 say "XONG"
+if [ -n "$SERVICE_URL" ]; then
+  echo "  Cloudflare Zero Trust > Networks > Tunnels > (tunnel dang dung) > Public Hostname > Add:"
+  echo "     Subdomain + Domain: ${DOMAIN}"
+  echo "     Service:            HTTP   ${SERVICE_URL#http://}"
+fi
 echo "  Mo:        https://${DOMAIN}"
 if [ "${GENERATED_PW:-}" = 1 ]; then
   echo "  Dang nhap: ${FLOWBOARD_ADMIN_USER} / ${FLOWBOARD_ADMIN_PASSWORD}   (doi mat khau sau khi vao)"
