@@ -43,8 +43,19 @@ def extension_zip() -> Response:
     return Response(
         buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{folder}.zip"'},
+        # no-store: Cloudflare cached this for 4h, so staff kept downloading
+        # the previous version after an update.
+        headers={"Content-Disposition": f'attachment; filename="{folder}.zip"',
+                 "Cache-Control": "no-store, max-age=0"},
     )
+
+@router.get("/extension-info")
+def extension_info() -> dict:
+    """Current Bridge version, so the UI can show which build to install."""
+    manifest = Path(_extension_dir()) / "manifest.json"
+    if not manifest.is_file():
+        return {"version": None}
+    return {"version": json.loads(manifest.read_text(encoding="utf-8")).get("version")}
 
 
 _GEN_TYPES = {"gen_image", "edit_image", "gen_video", "gen_video_omni"}

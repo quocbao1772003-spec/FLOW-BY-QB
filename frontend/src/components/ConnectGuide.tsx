@@ -1,5 +1,6 @@
 import "../connect-guide.css";
 import { useState, type ReactNode } from "react";
+import { extensionZipUrl, useExtensionVersion } from "../lib/extensionVersion";
 
 // Step-by-step guide for staff: connect a Chrome profile (Google Flow) to the
 // team server. Illustrations are real screenshots (frontend/public/guide), with the
@@ -33,6 +34,7 @@ function Step({ n, title, children, art }: { n: number; title: string; children:
 
 export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const extVersion = useExtensionVersion();
   const [copied, setCopied] = useState(false);
   const server = window.location.origin;
 
@@ -82,8 +84,8 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             >
               <p>
                 Bấm{" "}
-                <a className="cg-link" href="/api/accounts/extension.zip" download>
-                  Tải flowboard-bridge.zip
+                <a className="cg-link" href={extensionZipUrl(extVersion)} download>
+                  Tải flowboard-bridge{extVersion ? `-${extVersion}` : ""}.zip
                 </a>
                 .
               </p>
@@ -107,7 +109,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
               </p>
               <p>
                 Bật <b>Developer mode</b> (công tắc góc trên bên phải), bấm <b>Load unpacked</b>, chọn thư mục{" "}
-                <b>flowboard-bridge</b> vừa giải nén. Thấy thẻ <b>Flowboard Bridge 0.2.0</b> là cài xong.
+                <b>flowboard-bridge</b> vừa giải nén. Thấy thẻ <b>Flowboard Bridge {extVersion ?? ""}</b> là cài xong.
               </p>
               <p>
                 Cuối cùng bấm biểu tượng <b>mảnh ghép 🧩</b> trên thanh Chrome, bấm <b>ghim 📌</b> cạnh Flowboard Bridge để

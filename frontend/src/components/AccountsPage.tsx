@@ -4,6 +4,7 @@ import { IconRefresh } from "../canvas/icons";
 import { ChromePairing } from "./ChromePairing";
 import { ConnectGuide } from "./ConnectGuide";
 import { useSessionStore } from "../store/session";
+import { extensionZipUrl, useExtensionVersion } from "../lib/extensionVersion";
 
 // "Tài khoản Flow" tab — every Google Flow account connected through a
 // Chrome profile (agent: services/account_pool.py, routes/accounts.py).
@@ -83,6 +84,7 @@ function statusOf(a: FlowAccountRow): { label: string; tone: "on" | "ready" | "s
 
 export function AccountsPage() {
   const authRequired = useSessionStore((s) => s.authRequired);
+  const extVersion = useExtensionVersion();
   const [data, setData] = useState<AccountsData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -364,8 +366,8 @@ export function AccountsPage() {
             )}
           </span>
           {authRequired && (
-            <a className="accounts-path" href="/api/accounts/extension.zip" download>
-              <span>flowboard-bridge.zip</span>
+            <a className="accounts-path" href={extensionZipUrl(extVersion)} download>
+              <span>flowboard-bridge{extVersion ? `-${extVersion}` : ""}.zip</span>
               <em>Tải</em>
             </a>
           )}
