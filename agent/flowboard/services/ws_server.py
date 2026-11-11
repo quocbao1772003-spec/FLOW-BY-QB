@@ -31,6 +31,7 @@ async def _handler(websocket) -> None:
                  and 16 <= len(hello["instanceId"]) <= 80
                  and isinstance(hello.get("version"), str))
         if not valid:
+            logger.warning("bridge rejected: bad hello (version=%r)", hello.get("version") if isinstance(hello, dict) else None)
             await websocket.send(json.dumps({"type": "bridge_rejected", "error": "EXTENSION_UPDATE_REQUIRED"}))
             await websocket.close(code=4002, reason="Flowboard Bridge 0.1.15+ required")
             return
@@ -45,6 +46,9 @@ async def _handler(websocket) -> None:
     if users_svc.auth_enabled():
         user = users_svc.user_for_token(hello.get("pairToken"), "bridge")
         if user is None:
+            tok = str(hello.get("pairToken") or "")
+            logger.warning("bridge rejected: pairing code %s (profile %s…, version %s)",
+                           (tok[:8] + "…") if tok else "MISSING", hello["instanceId"][:8], hello.get("version"))
             await websocket.send(json.dumps({"type": "bridge_rejected", "error": "PAIRING_REQUIRED"}))
             await websocket.close(code=4004, reason="Pairing code required")
             return
