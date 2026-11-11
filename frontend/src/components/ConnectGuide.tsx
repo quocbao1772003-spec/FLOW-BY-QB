@@ -2,22 +2,17 @@ import "../connect-guide.css";
 import { useState, type ReactNode } from "react";
 
 // Step-by-step guide for staff: connect a Chrome profile (Google Flow) to the
-// team server. Illustrations are drawn in HTML/CSS (not screenshots) so they
-// stay sharp, follow the light/dark theme and show this server's address.
+// team server. Illustrations are real screenshots (frontend/public/guide), with the
+// thing to click outlined in pink.
 
-function Mark({ children }: { children: ReactNode }) {
-  return <span className="cg-mark">{children}</span>;
-}
-
-function Browser({ url, children }: { url: string; children: ReactNode }) {
+function Shot({ src, alt }: { src: string; alt: string }) {
   return (
-    <div className="cg-browser" aria-hidden="true">
-      <div className="cg-browser__bar">
-        <span className="cg-dot" /><span className="cg-dot" /><span className="cg-dot" />
-        <span className="cg-browser__url">{url}</span>
-      </div>
-      <div className="cg-browser__body">{children}</div>
-    </div>
+    <figure className="cg-shot">
+      <a href={src} target="_blank" rel="noreferrer" title="Bấm để xem ảnh lớn">
+        <img src={src} alt={alt} loading="lazy" />
+      </a>
+      <figcaption>{alt}</figcaption>
+    </figure>
   );
 }
 
@@ -40,7 +35,6 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
   const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
   const server = window.location.origin;
-  const host = window.location.host;
 
   function copyServer() {
     void navigator.clipboard?.writeText(server).then(() => {
@@ -70,23 +64,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={1}
               title="Tạo mã ghép nối"
-              art={
-                <Browser url={`${host}  ›  Tài khoản Flow`}>
-                  <div className="cg-mini-title">Kết nối Chrome</div>
-                  <div className="cg-row">
-                    <span className="cg-chip">Server</span>
-                    <span className="cg-field">{server}</span>
-                  </div>
-                  <div className="cg-row">
-                    <span className="cg-chip">Mã mới</span>
-                    <span className="cg-field cg-field--muted">Chrome máy văn phòng</span>
-                    <Mark><span className="cg-btn cg-btn--accent">Tạo mã ghép nối</span></Mark>
-                  </div>
-                  <div className="cg-secret">
-                    Mã ghép nối: <code>fbp_7Kq2…</code> <Mark><span className="cg-btn">Copy</span></Mark>
-                  </div>
-                </Browser>
-              }
+              art={<Shot src="/guide/1-tao-ma.webp" alt="Trang Tài khoản Flow, mục Kết nối Chrome: bấm Tạo mã ghép nối" />}
             >
               <p>
                 Ngay trên trang này, mục <b>Kết nối Chrome</b>: gõ ghi chú (ví dụ “Chrome máy văn phòng”) rồi bấm{" "}
@@ -100,23 +78,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={2}
               title="Tải extension và giải nén"
-              art={
-                <div className="cg-explorer" aria-hidden="true">
-                  <div className="cg-explorer__file">
-                    <span className="cg-zip">ZIP</span> flowboard-bridge.zip
-                  </div>
-                  <div className="cg-menu">
-                    <div className="cg-menu__item">Open</div>
-                    <Mark><div className="cg-menu__item cg-menu__item--on">Extract All…</div></Mark>
-                    <div className="cg-menu__item">Copy</div>
-                  </div>
-                  <div className="cg-arrow">↓</div>
-                  <div className="cg-explorer__file">
-                    <span className="cg-folder">▰</span> flowboard-bridge
-                    <span className="cg-note">thư mục để Chrome đọc</span>
-                  </div>
-                </div>
-              }
+
             >
               <p>
                 Bấm{" "}
@@ -138,31 +100,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={3}
               title="Cài extension vào Chrome"
-              art={
-                <Browser url="chrome://extensions">
-                  <div className="cg-ext-head">
-                    <span className="cg-mini-title">Extensions</span>
-                    <Mark>
-                      <span className="cg-toggle-row">
-                        Developer mode <span className="cg-switch" />
-                      </span>
-                    </Mark>
-                  </div>
-                  <div className="cg-row">
-                    <Mark><span className="cg-btn">Load unpacked</span></Mark>
-                    <span className="cg-btn cg-btn--ghost">Pack extension</span>
-                  </div>
-                  <div className="cg-card">
-                    <span className="cg-logo">F</span>
-                    <span>
-                      <b>Flowboard Bridge</b> <small>0.2.0</small>
-                      <br />
-                      <small>Đã bật</small>
-                    </span>
-                    <span className="cg-switch cg-switch--sm" />
-                  </div>
-                </Browser>
-              }
+              art={<Shot src="/guide/3-extensions.webp" alt="Trang chrome://extensions: (1) bật Developer mode, (2) bấm Load unpacked" />}
             >
               <p>
                 Mở tab mới, gõ <code>chrome://extensions</code> rồi Enter.
@@ -183,28 +121,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={4}
               title="Điền Server và Mã ghép nối"
-              art={
-                <div className="cg-popup" aria-hidden="true">
-                  <div className="cg-popup__head">
-                    <span className="cg-logo">F</span> Flowboard Bridge <small>v0.2.0</small>
-                  </div>
-                  <div className="cg-popup__kv"><span>Status</span><span>○ offline</span></div>
-                  <div className="cg-popup__label">Server Flowboard</div>
-                  <Mark><div className="cg-popup__input">{server}</div></Mark>
-                  <div className="cg-popup__label">Mã ghép nối</div>
-                  <Mark><div className="cg-popup__input">fbp_7Kq2…</div></Mark>
-                  <Mark><div className="cg-popup__btn">Lưu và kết nối</div></Mark>
-                  <div className="cg-allow">
-                    <div>
-                      Flowboard Bridge muốn truy cập <b>{host}</b>
-                    </div>
-                    <div className="cg-row cg-row--end">
-                      <span className="cg-btn cg-btn--ghost">Deny</span>
-                      <Mark><span className="cg-btn cg-btn--accent">Allow</span></Mark>
-                    </div>
-                  </div>
-                </div>
-              }
+              art={<Shot src="/guide/4-popup-dien.webp" alt="Popup Flowboard Bridge: (1) Server, (2) Mã ghép nối, (3) Lưu và kết nối" />}
             >
               <p>Bấm icon Flowboard Bridge trên thanh Chrome để mở popup, rồi điền:</p>
               <ul>
@@ -230,20 +147,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={5}
               title="Mở Google Flow và vào một project"
-              art={
-                <Browser url="labs.google/fx/tools/flow/project/…">
-                  <div className="cg-flow">
-                    <div className="cg-flow__side" />
-                    <div className="cg-flow__main">
-                      <div className="cg-flow__grid">
-                        <span /><span /><span /><span />
-                      </div>
-                      <div className="cg-flow__prompt">Nhập prompt…</div>
-                    </div>
-                  </div>
-                  <div className="cg-tabnote">Để tab này luôn mở khi dùng Flowboard</div>
-                </Browser>
-              }
+              art={<Shot src="/guide/5-google-flow.webp" alt="labs.google/fx/tools/flow: bấm Create with Google Flow rồi mở một project" />}
             >
               <p>
                 Trong popup bấm <b>Open Flow tab</b>, hoặc tự mở <code>labs.google/fx/tools/flow</code>. Đăng nhập đúng
@@ -260,21 +164,7 @@ export function ConnectGuide({ defaultOpen = false }: { defaultOpen?: boolean })
             <Step
               n={6}
               title="Kiểm tra đã kết nối"
-              art={
-                <div className="cg-popup" aria-hidden="true">
-                  <div className="cg-popup__head">
-                    <span className="cg-logo">F</span> Flowboard Bridge <small>v0.2.0</small>
-                  </div>
-                  <Mark>
-                    <div className="cg-popup__kv"><span>Status</span><span className="cg-ok">● connected</span></div>
-                  </Mark>
-                  <div className="cg-popup__kv"><span>Token</span><span>có</span></div>
-                  <div className="cg-popup__kv"><span>Error</span><span>—</span></div>
-                  <div className="cg-acct">
-                    <span className="cg-dot cg-dot--ok" /> ten.ban@gmail.com <small>online</small>
-                  </div>
-                </div>
-              }
+              art={<Shot src="/guide/6-connected.webp" alt="Popup sau khi kết nối thành công: Status ● connected" />}
             >
               <p>
                 Mở lại popup: <b>Status</b> là <b className="cg-ok">● connected</b>, dòng <b>Error</b> trống.
