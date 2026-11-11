@@ -179,9 +179,20 @@ export function TeamPage() {
                 <span>Mã Chrome</span>
               </div>
               <div className="team-row__actions">
-                <button type="button" className="accounts-btn" disabled={busy} onClick={() => void act(u, { reset_password: true })}>
-                  Đặt lại mật khẩu
-                </button>
+                {u.id !== me?.id && (
+                  <button
+                    type="button"
+                    className="accounts-btn"
+                    disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(`Đặt lại mật khẩu cho ${u.display_name || u.username}? Mật khẩu cũ sẽ không dùng được nữa, mật khẩu mới hiện ra một lần để anh/chị gửi cho họ.`)) {
+                        void act(u, { reset_password: true });
+                      }
+                    }}
+                  >
+                    Đặt lại mật khẩu
+                  </button>
+                )}
                 <button
                   type="button"
                   className="accounts-btn"
