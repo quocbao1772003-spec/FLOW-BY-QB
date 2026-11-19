@@ -26,6 +26,7 @@ import {
   duplicateSelectedNodes,
 } from "./SelectionToolbar";
 import { LeftToolbar } from "./LeftToolbar";
+import { SongNodeCard } from "./SongNodeCard";
 import { FooterControls } from "./FooterControls";
 import { NodeTypeIcon, IconSpinner } from "./icons";
 import { useGenerationStore } from "../store/generation";
@@ -46,6 +47,7 @@ const nodeTypes = {
   Storyboard: NodeCard,
   assistant: AssistantNodeCard,
   group: GroupNodeCard,
+  song: SongNodeCard,
 };
 
 const edgeTypes = {

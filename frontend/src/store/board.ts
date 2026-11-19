@@ -221,6 +221,7 @@ const TYPE_TITLE: Record<NodeType, string> = {
   Storyboard: "Storyboard",
   assistant: "Assistant",
   group: "New group",
+  song: "Song",
 };
 
 // ── Persisted active-board id ─────────────────────────────────────────────

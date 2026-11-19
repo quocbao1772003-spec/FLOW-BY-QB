@@ -83,6 +83,7 @@ class AccountPool:
             "flowboard_pinned_account", default=None
         )
         self._state_path = state_path
+        self._music: dict[str, dict] = {}  # email -> last seen Flow Music credits/session
         self._state: dict[str, Any] = {
             "auto_rotate": True,
             "selected": None,        # account key the user picked
@@ -361,6 +362,43 @@ class AccountPool:
             }
             self._save()
         logger.info("account %s marked out of quota until reset", key)
+
+    def mark_exhausted_key(self, key: str, reason: str = "", hold_s: float = 6 * 3600) -> None:
+        """Like mark_exhausted but for a service key (``music:<email>``) with a
+        fixed hold, so running out of music credits never blocks image jobs."""
+        now = time.time()
+        with self._lock:
+            self._state.setdefault("exhausted", {})[key] = {
+                "at": now, "until": now + hold_s, "reason": str(reason)[:200],
+            }
+            self._save()
+
+    def note_music(self, key: str, *, credits: Any = None, session_ok: Optional[bool] = None) -> None:
+        """Remember the last Flow Music credits / login state seen for an account."""
+        row = self._music.setdefault(key, {})
+        if credits is not None:
+            row["credits_remaining"] = credits
+        if session_ok is not None:
+            row["session_ok"] = session_ok
+        row["at"] = time.time()
+
+    def music_snapshot(self, busy_fn=None) -> list[dict]:
+        now = time.time()
+        out = []
+        for key in {self.key_of(c) for c in self.connected_clients() if self._visible(c)}:
+            if key.startswith("profile:"):
+                continue
+            mk = "music:" + key
+            ex = self._exhausted(mk, now)
+            row = self._music.get(key, {})
+            out.append({
+                "email": key,
+                "credits_remaining": row.get("credits_remaining"),
+                "session_ok": row.get("session_ok"),
+                "busy": bool(busy_fn(mk)) if busy_fn else False,
+                "exhausted_until": (ex or {}).get("until"),
+            })
+        return sorted(out, key=lambda r: r["email"])
 
     def record_switch(self, from_key: str, to_key: str, reason: str = "") -> None:
         with self._lock:

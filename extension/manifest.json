@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Flowboard Bridge",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Local bridge for Google Flow — runs batchexecute RPCs inside a signed-in flow.google.com tab and mints reCAPTCHA for Flowboard.",
   "permissions": [
     "storage",
@@ -16,6 +16,7 @@
     "https://flow-content.google/*",
     "https://labs.google/*",
     "https://aisandbox-pa.googleapis.com/*",
+    "https://www.flowmusic.app/*",
     "http://127.0.0.1:8101/*",
     "http://localhost:8101/*",
     "http://127.0.0.1:8434/*",

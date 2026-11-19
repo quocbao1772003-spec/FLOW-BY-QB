@@ -920,6 +920,72 @@ async def cancel_request(request_id: int) -> dict:
     return await fb.post(f"/api/requests/{request_id}/cancel")
 
 
+# ── Flow Music ────────────────────────────────────────────────────────────
+
+def _music_report(req: dict) -> dict:
+    out = {k: req.get(k) for k in ("request_id", "status", "account", "credits_used", "error", "takes", "stems")
+           if req.get(k) not in (None, [], {})}
+    out["request_id"] = req.get("request_id")
+    out["status"] = req.get("status")
+    if req.get("status") in ("queued", "running"):
+        out["note"] = "Still running. Call get_music(request_id, wait_seconds) to keep waiting."
+    return out
+
+async def _music_wait(request_id: str, wait_seconds: float) -> dict:
+    from flowboard_mcp.client import request_token
+
+    if request_token.get():
+        wait_seconds = min(wait_seconds, 80.0)  # Cloudflare: one response < 100 s
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    while True:
+        req = await fb.get(f"/api/music/requests/{request_id}")
+        if req.get("status") in ("done", "failed", "cancelled") or time.monotonic() >= deadline:
+            return req
+        await asyncio.sleep(3.0)
+
+@mcp.tool(annotations=SPEND)
+async def generate_music(
+    sound_prompt: str,
+    lyrics: Optional[str] = None,
+    instrumental: bool = False,
+    title: str = "Untitled",
+    model: str = "Lyria 3.5",
+    seed: Optional[int] = None,
+    takes: int = 1,
+    formats: Optional[list[str]] = None,
+    account: Optional[str] = None,
+    client_ref: Optional[str] = None,
+    wait_seconds: int = 150,
+) -> dict:
+    """Generate song(s) with Google Flow Music (~5 credits per song, 1-3 min).
+    sound_prompt = style/mood description; lyrics optional (instrumental=true
+    ignores them). The same client_ref never creates a duplicate. Returns the
+    takes with file URLs under /api/music/media/... when done, else a
+    request_id to poll with get_music."""
+    body = {"sound_prompt": sound_prompt, "lyrics": lyrics, "instrumental": instrumental,
+            "title": title, "model": model, "seed": seed, "takes": takes,
+            "formats": formats or ["mp3"], "account": account, "client_ref": client_ref}
+    sent = await fb.post("/api/music/generate", json=body)
+    return _music_report(await _music_wait(sent["request_id"], float(wait_seconds)))
+
+@mcp.tool(annotations=READ)
+async def get_music(request_id: str, wait_seconds: int = 0) -> dict:
+    """Status/result of a generate_music or split_stems request."""
+    return _music_report(await _music_wait(request_id, float(wait_seconds)))
+
+@mcp.tool(annotations=READ)
+async def music_credits(refresh: bool = True) -> list:
+    """Flow Music accounts: email, credits_remaining, session_ok, busy, exhausted_until."""
+    if refresh:
+        return await fb.post("/api/music/accounts/refresh")
+    return await fb.get("/api/music/accounts")
+
+@mcp.tool(annotations=SPEND)
+async def split_stems(clip_id: str, account: Optional[str] = None, wait_seconds: int = 120) -> dict:
+    """Split a generated clip into stems (vocals, drums, ...). Use a clip_id from generate_music."""
+    sent = await fb.post("/api/music/stems", json={"clip_id": clip_id, "account": account})
+    return _music_report(await _music_wait(sent["request_id"], float(wait_seconds)))
+
 @mcp.tool(annotations=READ)
 async def list_activity(limit: int = 20, types: Optional[str] = None) -> dict:
     """Recent generation history (newest first). types filters by request

@@ -24,6 +24,7 @@ from flowboard.services import users as users_svc
 from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
+from flowboard.routes import music as music_route
 from flowboard.services.flow_client import account_pool, flow_client
 from flowboard.services.ws_server import run_ws_server
 from flowboard.worker.processor import get_worker, reset_image_project_session
@@ -222,6 +223,7 @@ app.include_router(projects.router)
 app.include_router(flow_projects.router)
 app.include_router(references_route.router)
 app.include_router(requests_route.router)
+app.include_router(music_route.router)
 app.include_router(media.bytes_router)
 app.include_router(media.api_router)
 app.include_router(upload.router)

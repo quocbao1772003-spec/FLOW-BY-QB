@@ -810,7 +810,60 @@ async def _handle_gen_video_omni(params: dict) -> tuple[dict, Optional[str]]:
     )
 
 
+def _music_canceled(rid: Optional[int]):
+    def check() -> bool:
+        if rid is None:
+            return False
+        with get_session() as s:
+            req = s.get(Request, rid)
+            return req is None or req.status == "canceled"
+    return check
+
+
+async def _handle_gen_music(params: dict) -> tuple[dict, Optional[str]]:
+    """Flow Music song(s) via the extension; files land in storage/music/<rid>/."""
+    from flowboard.config import STORAGE_DIR
+    from flowboard.services import flow_music
+    from flowboard.services.flow_client import account_pool
+
+    if not str(params.get("sound_prompt") or "").strip():
+        return {}, "invalid_params:sound_prompt"
+    rid = params.get("__request_id")
+    out_dir = STORAGE_DIR / "music" / str(rid or "adhoc")
+    result, err = await flow_music.run_job(
+        params, account_pool, out_dir, is_canceled=_music_canceled(rid),
+    )
+    result = dict(result)
+    for t in result.get("takes") or []:
+        t["files"] = {k: f"/api/music/media/{rid}/{v}" for k, v in (t.get("files") or {}).items()}
+    if result.get("account"):
+        try:
+            account_pool.note_music(result["account"], credits=result.get("credits_remaining"),
+                                    session_ok=err != "no_session")
+        except Exception:  # noqa: BLE001
+            logger.exception("note_music failed")
+    if err == "cancelled":
+        err = "canceled"
+    return result, err
+
+
+async def _handle_stems_music(params: dict) -> tuple[dict, Optional[str]]:
+    from flowboard.config import STORAGE_DIR
+    from flowboard.services import flow_music
+    from flowboard.services.flow_client import account_pool
+
+    if not params.get("clip_id"):
+        return {}, "invalid_params:clip_id"
+    rid = params.get("__request_id")
+    result, err = await flow_music.run_stems(params, account_pool, STORAGE_DIR / "music" / str(rid) / "stems")
+    result = dict(result)
+    result["stems"] = {k: f"/api/music/media/{rid}/stems/{v}" for k, v in (result.get("stems") or {}).items()}
+    return result, err
+
+
 _DEFAULT_HANDLERS: dict[str, Handler] = {
+    "gen_music": _handle_gen_music,
+    "stems_music": _handle_stems_music,
     "proxy": _handle_proxy,
     "create_project": _handle_create_project,
     "gen_image": _handle_gen_image,
@@ -1069,6 +1122,30 @@ def finalize_node_for_request(rid: int) -> bool:
             return False
         data = dict(node.data or {})
         now = datetime.now(timezone.utc).isoformat()
+        if req.type in ("gen_music", "stems_music"):
+            if req.status == "done":
+                node.status = "done"
+                if req.type == "gen_music":
+                    data.update({"takes": result.get("takes") or [],
+                                 "creditsUsed": result.get("credits_used"),
+                                 "musicAccount": result.get("account"), "renderedAt": now})
+                else:
+                    data["stems"] = result.get("stems") or {}
+                data.pop("error", None)
+            elif req.status == "canceled":
+                node.status = "idle"
+            else:
+                node.status = "error"
+                data["error"] = req.error or "failed"
+            node.data = data
+            result["_node_finalized"] = True
+            req.result = result
+            s.add(node)
+            s.add(req)
+            s.commit()
+            board_id = node.board_id
+            sync_state.bump(board_id)
+            return True
         if req.status == "done":
             media_ids = [m if isinstance(m, str) and m else None
                          for m in (result.get("media_ids") or [])]

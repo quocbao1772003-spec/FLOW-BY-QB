@@ -7,6 +7,8 @@
 
 // Local app by default. For a Flowboard server (e.g. https://flow.example.com)
 // the popup stores serverUrl + the pairing code from the "Tài khoản Flow" page.
+importScripts('music-api.js'); // Flow Music: flowMusicCall / handleMusicCall
+
 const LOCAL_WS_URL       = 'ws://127.0.0.1:9223';
 const LOCAL_CALLBACK_URL = 'http://127.0.0.1:8101/api/ext/callback';
 let AGENT_WS_URL  = LOCAL_WS_URL;
@@ -334,6 +336,8 @@ function connectToAgent(force = false) {
         }
       } else if (msg.method === 'api_request') {
         await handleApiRequest(msg);
+      } else if (msg.method === 'music_call') {
+        await handleMusicCall(msg, sendToAgent);
       } else if (msg.method === 'trpc_request') {
         await handleTrpcRequest(msg);
       } else if (msg.method === 'get_status') {
