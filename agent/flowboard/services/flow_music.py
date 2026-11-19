@@ -332,6 +332,9 @@ async def generate_songs(fm: FlowMusic, params: dict, out_dir: Path, *,
 _locks: dict[str, asyncio.Lock] = {}
 
 
+NO_ACCOUNT_MSG = ("No Google account of yours is connected: pair your Chrome extension to your "
+                  "Flowboard user and open flowmusic.app signed in (no_session)")
+
 def lock_for(key: str) -> asyncio.Lock:
     return _locks.setdefault(key, asyncio.Lock())
 
@@ -364,7 +367,7 @@ async def run_job(params: dict, pool: Any, out_dir: Path, *, is_canceled=None,
     no_session move on to the next account. Returns (result, error_code)."""
     cands = candidates(pool, params.get("account"))
     if not cands:
-        return {}, "extension_offline"
+        return {"error_detail": NO_ACCOUNT_MSG}, "extension_offline"
     tried: list[str] = []
     last: Optional[MusicError] = None
     while True:
@@ -402,7 +405,7 @@ async def run_stems(params: dict, pool: Any, out_dir: Path, *,
                     ) -> tuple[dict, Optional[str]]:
     cands = candidates(pool, params.get("account"))
     if not cands:
-        return {}, "extension_offline"
+        return {"error_detail": NO_ACCOUNT_MSG}, "extension_offline"
     client = cands[0]
     async with lock_for(music_key(pool, client)):
         try:

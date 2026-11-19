@@ -157,6 +157,22 @@ def cancel(request_id: int):
         return _view(req)
 
 
+@router.get("/whoami")
+def whoami():
+    """Who the caller (session cookie or ``Authorization: Bearer fbt_...``)
+    is and which of THEIR accounts Flow Music can use."""
+    from flowboard.services import flow_music, users as users_svc
+    from flowboard.services.flow_client import account_pool
+
+    uid = current_user_id.get()
+    u = users_svc.get_user(uid) if uid is not None else None
+    music = [{"email": r["email"], "credits_remaining": r["credits_remaining"],
+              "session_ok": r["session_ok"]}
+             for r in account_pool.music_snapshot(flow_music.is_busy)]
+    images = [a for a in account_pool.snapshot()["accounts"] if a.get("identified")]
+    return {"user": users_svc.public_user(u) if u else None,
+            "music_accounts": music, "image_accounts_count": len(images)}
+
 @router.get("/accounts")
 def accounts():
     from flowboard.services import flow_music

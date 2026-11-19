@@ -259,3 +259,73 @@ def test_music_media_serves_file_and_blocks_traversal(client):
 def test_accounts_endpoint(client):
     r = client.get("/api/music/accounts")
     assert r.status_code == 200 and isinstance(r.json(), list)
+
+# ── per-user scoping (FR-075) ──────────────────────────────────────────────
+def test_music_is_scoped_per_user(client, monkeypatch, tmp_path):
+    from flowboard.services import users as svc
+    from flowboard.services.flow_client import account_pool
+    from flowboard.worker import processor
+
+    account_pool._state_path = tmp_path / "accounts.json"
+    account_pool._reset_for_tests()
+    svc._invalidate_cache()
+    a = svc.create_user("boss", "secret123", role="admin")
+    b = svc.create_user("lan", "secret123")
+    svc._invalidate_cache()
+    ta, _ = svc.create_token(a.id, "api")
+    tb, _ = svc.create_token(b.id, "api")
+    pa, _ = svc.create_token(a.id, "bridge")
+    pb, _ = svc.create_token(b.id, "bridge")
+    monkeypatch.setattr(processor.get_worker(), "enqueue", lambda rid: None)
+
+    from flowboard.services import ws_server
+    import sys
+    sys.path.insert(0, __file__.rsplit("test_flow_music.py", 1)[0])
+    from test_users import _Sock
+
+    async def scenario():
+        socks = [
+            _Sock({"type": "bridge_hello", "protocol": 2, "instanceId": "inst-AAAAAAAAAAAAAAAA", "version": "0.2.0", "pairToken": pa}),
+            _Sock({"type": "bridge_hello", "protocol": 2, "instanceId": "inst-BBBBBBBBBBBBBBBB", "version": "0.2.0", "pairToken": pb}),
+        ]
+        tasks = [asyncio.create_task(ws_server._handler(s)) for s in socks]
+        await asyncio.sleep(0.05)
+        await socks[0].inbox.put({"type": "user_info", "userInfo": {"email": "boss.flow@x.test"}})
+        await socks[1].inbox.put({"type": "user_info", "userInfo": {"email": "lan.flow@x.test"}})
+        await asyncio.sleep(0.05)
+        # candidates() only sees the acting user's accounts
+        for uid, email in ((a.id, "boss.flow@x.test"), (b.id, "lan.flow@x.test")):
+            tok = svc.current_user_id.set(uid)
+            try:
+                assert [account_pool.key_of(c) for c in fm.candidates(account_pool)] == [email]
+                assert fm.candidates(account_pool, "boss.flow@x.test" if email.startswith("lan") else "lan.flow@x.test") == []
+            finally:
+                svc.current_user_id.reset(tok)
+        for s in socks:
+            await s.inbox.put(None)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+    ha, hb = {"Authorization": f"Bearer {ta}"}, {"Authorization": f"Bearer {tb}"}
+    ra = client.post("/api/music/generate", json={"sound_prompt": "p"}, headers=ha)
+    assert ra.status_code == 202
+    rid = ra.json()["request_id"]
+    assert client.get(f"/api/music/requests/{rid}", headers=ha).status_code == 200
+    assert client.get(f"/api/music/requests/{rid}", headers=hb).status_code == 404
+    assert client.post(f"/api/music/requests/{rid}/cancel", headers=hb).status_code == 404
+    # same client_ref from another user is a different request
+    r1 = client.post("/api/music/generate", json={"sound_prompt": "p", "client_ref": "x"}, headers=ha).json()
+    r2 = client.post("/api/music/generate", json={"sound_prompt": "p", "client_ref": "x"}, headers=hb).json()
+    assert r1["request_id"] != r2["request_id"]
+
+    wa = client.get("/api/music/whoami", headers=ha).json()
+    wb = client.get("/api/music/whoami", headers=hb).json()
+    assert wa["user"]["username"] == "boss" and wb["user"]["username"] == "lan"
+    # accounts listing: connection closed above, so each sees only own (none now), never the other's
+    assert all(x["email"].startswith("boss") for x in wa["music_accounts"])
+    assert all(x["email"].startswith("lan") for x in wb["music_accounts"])
+    assert client.get("/api/music/whoami", headers={"Authorization": "Bearer fbt_bogus0000000000000"}).status_code == 401
+    account_pool._reset_for_tests()
+    account_pool._state_path = None
+    svc._invalidate_cache()
