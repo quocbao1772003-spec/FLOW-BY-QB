@@ -9,6 +9,7 @@ import {
   IconGridLayout,
   IconImage,
   IconLayers,
+  IconMusic,
   IconSidebar,
   IconUser,
   IconUsers,
@@ -21,9 +22,10 @@ import {
 const ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [
   { view: "flows", label: "Flows", icon: <IconFrame size={15} /> },
   { view: "imagegen", label: "Image Gen", icon: <IconImage size={15} /> },
+  { view: "music", label: "Flow Music", icon: <IconMusic size={15} /> },
   { view: "templates", label: "Thư viện mẫu", icon: <IconLayers size={15} /> },
   { view: "library", label: "Library", icon: <IconGridLayout size={15} /> },
-  { view: "accounts", label: "Tài khoản Flow", icon: <IconUser size={15} /> },
+  { view: "accounts", label: "Tài khoản", icon: <IconUser size={15} /> },
 ];
 
 const ADMIN_ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [

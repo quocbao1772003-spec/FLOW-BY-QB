@@ -1,0 +1,178 @@
+[
+ {
+  "name": "music-queue__768",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": []
+ },
+ {
+  "name": "music-library__768",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": []
+ },
+ {
+  "name": "accounts__768",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "▾Hướng dẫn kết nối Chrom"
+   ]
+  ]
+ },
+ {
+  "name": "music-queue__1024",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": []
+ },
+ {
+  "name": "music-library__1024",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": []
+ },
+ {
+  "name": "accounts__1024",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "▾Hướng dẫn kết nối Chrom"
+   ]
+  ]
+ },
+ {
+  "name": "music-queue__1366",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "Hàng đợi 1"
+   ],
+   [
+    "WRAP",
+    "Thư viện của tôi 4"
+   ]
+  ]
+ },
+ {
+  "name": "music-library__1366",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "Hàng đợi 1"
+   ],
+   [
+    "WRAP",
+    "Thư viện của tôi 4"
+   ]
+  ]
+ },
+ {
+  "name": "accounts__1366",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "▾Hướng dẫn kết nối Chrom"
+   ]
+  ]
+ },
+ {
+  "name": "music-queue__1920",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "Hàng đợi 1"
+   ],
+   [
+    "WRAP",
+    "Thư viện của tôi 4"
+   ]
+  ]
+ },
+ {
+  "name": "music-library__1920",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "Hàng đợi 1"
+   ],
+   [
+    "WRAP",
+    "Thư viện của tôi 4"
+   ]
+  ]
+ },
+ {
+  "name": "accounts__1920",
+  "errs": [
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/releases/latest",
+   "403 https://api.github.com/repos/quocbao1772003-spec/FLOW-BY-QB/commits/main"
+  ],
+  "issues": [
+   [
+    "WRAP",
+    "▾Hướng dẫn kết nối Chrom"
+   ]
+  ]
+ }
+]

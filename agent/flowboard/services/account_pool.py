@@ -397,6 +397,7 @@ class AccountPool:
                 "session_ok": row.get("session_ok"),
                 "busy": bool(busy_fn(mk)) if busy_fn else False,
                 "exhausted_until": (ex or {}).get("until"),
+                "checked_at": row.get("at"),
             })
         return sorted(out, key=lambda r: r["email"])
 

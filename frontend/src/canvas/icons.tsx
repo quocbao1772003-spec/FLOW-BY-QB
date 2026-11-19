@@ -363,3 +363,94 @@ export function NodeTypeIcon({ type, size = 12 }: { type: string; size?: number 
       return <IconImage size={size} />;
   }
 }
+
+// ── Flow Music ─────────────────────────────────────────────────────────
+export function IconMusic(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </Svg>
+  );
+}
+
+export function IconPause(p: IconProps) {
+  return (
+    <Svg {...p} filled>
+      <rect x="6" y="4.5" width="4" height="15" rx="1.2" />
+      <rect x="14" y="4.5" width="4" height="15" rx="1.2" />
+    </Svg>
+  );
+}
+
+export function IconBoard(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18M9 21V9" />
+    </Svg>
+  );
+}
+
+export function IconSplit(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M16 3h5v5M8 3H3v5" />
+      <path d="M12 22v-8.3a4 4 0 0 0-1.17-2.87L3 3M15 9l6-6" />
+    </Svg>
+  );
+}
+
+export function IconKey(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6" />
+      <circle cx="7.5" cy="15.5" r="5.5" />
+    </Svg>
+  );
+}
+
+export function IconExternal(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M15 3h6v6M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </Svg>
+  );
+}
+
+export function IconSearch(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Svg>
+  );
+}
+
+export function IconAlert(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4M12 17h.01" />
+    </Svg>
+  );
+}
+
+export function IconMic(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" />
+    </Svg>
+  );
+}
+
+export function IconList(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </Svg>
+  );
+}

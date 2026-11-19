@@ -7,6 +7,7 @@ import { Toolbar } from "./components/Toolbar";
 import { AppSidebar } from "./components/AppSidebar";
 import { FlowsPage } from "./components/FlowsPage";
 import { ImageGenPage } from "./components/ImageGenPage";
+import { FlowMusicPage } from "./components/music/FlowMusicPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { AccountsPage } from "./components/AccountsPage";
 import { TemplatesPage } from "./components/TemplatesPage";
@@ -80,6 +81,7 @@ function Workspace() {
         )}
         {view === "flows" && <FlowsPage />}
         {view === "imagegen" && <ImageGenPage />}
+        {view === "music" && <FlowMusicPage />}
         {view === "library" && <LibraryPage />}
         {view === "accounts" && <AccountsPage />}
         {view === "templates" && <TemplatesPage />}

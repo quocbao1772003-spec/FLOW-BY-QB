@@ -836,6 +836,23 @@ async def _handle_gen_music(params: dict) -> tuple[dict, Optional[str]]:
     result = dict(result)
     for t in result.get("takes") or []:
         t["files"] = {k: f"/api/music/media/{rid}/{v}" for k, v in (t.get("files") or {}).items()}
+    # "Tách stems" option: split every finished take on the same account.
+    # A stems failure never fails the song itself — it is reported per take.
+    if not err and params.get("stems"):
+        for i, t in enumerate(result.get("takes") or []):
+            if not t.get("clip_id"):
+                continue
+            sp = {"clip_id": t["clip_id"], "account": result.get("account") or params.get("account")}
+            try:
+                sres, serr = await flow_music.run_stems(
+                    sp, account_pool, out_dir / "stems" / str(i + 1))
+            except Exception as e:  # noqa: BLE001
+                sres, serr = {}, str(e)[:200]
+            if serr:
+                t["stems_error"] = sres.get("error_detail") or serr
+            else:
+                t["stems"] = {k: f"/api/music/media/{rid}/stems/{i + 1}/{v}"
+                              for k, v in (sres.get("stems") or {}).items()}
     if result.get("account"):
         try:
             account_pool.note_music(result["account"], credits=result.get("credits_remaining"),

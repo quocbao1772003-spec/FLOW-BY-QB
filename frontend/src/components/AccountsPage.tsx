@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { IconRefresh } from "../canvas/icons";
+import { IconMusic, IconRefresh } from "../canvas/icons";
+import { musicAccounts, refreshMusicAccounts, type MusicAccount } from "../api/music";
+import { McpLinkCard } from "./music/McpLinkCard";
 import { ChromePairing } from "./ChromePairing";
 import { ConnectGuide } from "./ConnectGuide";
 import { useSessionStore } from "../store/session";
@@ -89,6 +91,8 @@ export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [music, setMusic] = useState<MusicAccount[]>([]);
+  const [musicBusy, setMusicBusy] = useState(false);
 
   async function load() {
     try {
@@ -101,6 +105,12 @@ export function AccountsPage() {
 
   useEffect(() => {
     let alive = true;
+    const pullMusic = () =>
+      musicAccounts()
+        .then((m) => alive && setMusic(m))
+        .catch(() => {});
+    void pullMusic();
+    const mt = setInterval(pullMusic, 15000);
     let t: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       await load();
@@ -109,6 +119,7 @@ export function AccountsPage() {
     void tick();
     return () => {
       alive = false;
+      clearInterval(mt);
       if (t) clearTimeout(t);
     };
   }, []);
@@ -133,6 +144,22 @@ export function AccountsPage() {
   const spent = live.filter((a) => a.exhausted);
   const active = accounts.find((a) => a.active);
   const events = data?.events ?? [];
+  const musicOf = (a: FlowAccountRow) =>
+    music.find((m) => m.email.toLowerCase() === (a.email ?? a.key).toLowerCase());
+  const musicCredits = music.reduce((sum, m) => sum + (m.credits_remaining ?? 0), 0);
+  const musicKnown = music.some((m) => m.credits_remaining !== null);
+
+  async function checkMusic() {
+    if (musicBusy) return;
+    setMusicBusy(true);
+    try {
+      setMusic(await refreshMusicAccounts());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMusicBusy(false);
+    }
+  }
 
   function move(key: string, dir: -1 | 1) {
     const keys = accounts.map((a) => a.key);
@@ -147,10 +174,10 @@ export function AccountsPage() {
     <div className="page accounts-page">
       <div className="page__header">
         <div>
-          <h1 className="page__title">Tài khoản Flow</h1>
+          <h1 className="page__title">Tài khoản</h1>
           <p className="page__subtitle">
-            Mỗi Chrome profile có extension là một tài khoản Google Flow. Hết lượt tạo ảnh trong ngày
-            thì lệnh tự chạy lại bằng tài khoản kế tiếp.
+            Mỗi Chrome profile có extension là một tài khoản Google, dùng cho Flow (ảnh, video) và Flow Music.
+            Hết lượt thì lệnh tự chạy lại bằng tài khoản kế tiếp.
           </p>
         </div>
         <div className="accounts-page__head-actions">
@@ -166,6 +193,15 @@ export function AccountsPage() {
             </span>
             <span>Tự đổi khi hết lượt</span>
           </label>
+          <button
+            type="button"
+            className="accounts-btn"
+            disabled={musicBusy || live.length === 0}
+            onClick={() => void checkMusic()}
+            title="Đọc lại đăng nhập + credit Flow Music của mọi tài khoản"
+          >
+            {musicBusy ? "Đang kiểm…" : "Kiểm tra Flow Music"}
+          </button>
           <button type="button" className="footer-btn" onClick={() => void load()} title="Làm mới" aria-label="Làm mới">
             <IconRefresh size={13} />
           </button>
@@ -188,12 +224,20 @@ export function AccountsPage() {
           <span className="accounts-stat__label">Hết lượt hôm nay</span>
         </div>
         <div className="accounts-stat">
+          <span className="accounts-stat__value">{musicKnown ? musicCredits.toLocaleString("vi-VN") : "—"}</span>
+          <span className="accounts-stat__label">
+            Credit Flow Music{musicKnown ? ` · ~${Math.floor(musicCredits / 5)} bài` : ""}
+          </span>
+        </div>
+        <div className="accounts-stat">
           <span className="accounts-stat__value accounts-stat__value--text" title={active?.key ?? ""}>
             {active?.email ?? "—"}
           </span>
           <span className="accounts-stat__label">Đang dùng</span>
         </div>
       </div>
+
+      <McpLinkCard />
 
       <div className="accounts-section__head">
         <h2 className="accounts-section__title">Danh sách tài khoản</h2>
@@ -210,7 +254,7 @@ export function AccountsPage() {
       </div>
 
       {data && accounts.length === 0 && (
-        <p className="page__empty">Chưa có tài khoản nào. Làm theo 3 bước bên dưới để thêm.</p>
+        <p className="page__empty">Chưa có tài khoản nào. Làm theo 4 bước bên dưới để thêm.</p>
       )}
 
       <div className="accounts-list">
@@ -261,6 +305,7 @@ export function AccountsPage() {
                   {a.name && <span>· {a.name}</span>}
                   {a.extension_version && <span>· extension {a.extension_version}</span>}
                 </div>
+                {a.connected && a.identified !== false && <MusicLine m={musicOf(a)} />}
                 {a.connected && a.identified === false && (
                   <div className="account-card__note account-card__note--warn">
                     Trong profile Chrome này mở Google Flow và vào một project bất kỳ (trang flow.google.com/project/…).
@@ -294,6 +339,17 @@ export function AccountsPage() {
               </div>
 
               <div className="account-card__actions">
+                {a.connected && a.identified !== false && musicOf(a)?.session_ok === false && (
+                  <a
+                    className="accounts-btn accounts-btn--on"
+                    href="https://flowmusic.app/"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Mở trong đúng Chrome profile này rồi đăng nhập cùng tài khoản Google"
+                  >
+                    Mở flowmusic.app
+                  </a>
+                )}
                 <button
                   type="button"
                   className={`accounts-btn${a.selected ? " accounts-btn--on" : ""}`}
@@ -396,6 +452,18 @@ export function AccountsPage() {
             <code>flow.google.com/project/…</code>) và để tab đó mở. Email sẽ tự hiện trong danh sách trên.
           </span>
         </div>
+        <div className="accounts-step">
+          <span className="accounts-step__num">4</span>
+          <span className="accounts-step__title">Đăng nhập Flow Music</span>
+          <span className="accounts-step__text">
+            Cùng profile đó mở <code>flowmusic.app</code>, đăng nhập <b>cùng tài khoản Google</b>. Quay lại đây bấm{" "}
+            <b>Kiểm tra Flow Music</b> để đọc credit. Cần extension từ bản 0.2.3.
+          </span>
+          <a className="accounts-path" href="https://flowmusic.app/" target="_blank" rel="noreferrer">
+            <span>flowmusic.app</span>
+            <em>Mở</em>
+          </a>
+        </div>
       </div>
 
       <div className="accounts-section__head">
@@ -416,6 +484,31 @@ export function AccountsPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function MusicLine({ m }: { m: MusicAccount | undefined }) {
+  let tone: "on" | "ready" | "spent" | "off" = "off";
+  let text = "Chưa kiểm — bấm Kiểm tra Flow Music";
+  if (m) {
+    const at = m.checked_at ? ` · kiểm ${time(m.checked_at)}` : "";
+    if (m.session_ok === false) {
+      tone = "spent";
+      text = `Chưa đăng nhập flowmusic.app${at}`;
+    } else if (m.exhausted_until) {
+      tone = "spent";
+      text = `Hết credit · mở lại ${time(m.exhausted_until)}`;
+    } else if (m.credits_remaining !== null) {
+      tone = m.busy ? "on" : "ready";
+      text = `${m.busy ? "Đang tạo nhạc" : "Rảnh"} · còn ${m.credits_remaining.toLocaleString("vi-VN")} credit${at}`;
+    }
+  }
+  return (
+    <div className="account-card__line account-card__line--muted account-card__music">
+      <IconMusic size={12} />
+      <span className={`account-dot account-dot--${tone}`} aria-hidden="true" />
+      <span>Flow Music · {text}</span>
     </div>
   );
 }

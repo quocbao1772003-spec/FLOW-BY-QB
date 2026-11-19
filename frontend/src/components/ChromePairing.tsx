@@ -80,9 +80,6 @@ export function ChromePairing() {
           <button type="button" className="page__cta" disabled={busy} onClick={() => void make("bridge")}>
             Tạo mã ghép nối
           </button>
-          <button type="button" className="accounts-btn" disabled={busy} onClick={() => void make("api")}>
-            Tạo link MCP
-          </button>
         </div>
         {fresh && fresh.kind === "bridge" && (
           <div className="team-secret">

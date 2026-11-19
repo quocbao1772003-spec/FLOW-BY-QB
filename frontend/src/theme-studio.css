@@ -1173,7 +1173,7 @@ a.account-panel__version-link:hover code {
 
 .accounts-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 32px;
 }
@@ -1483,7 +1483,7 @@ a.account-panel__version-link:hover code {
 
 .accounts-steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin: 0 0 32px;
 }
@@ -1644,7 +1644,6 @@ a.account-panel__version-link:hover code {
 }
 
 @media (max-width: 860px) {
-  .accounts-stats,
   .accounts-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

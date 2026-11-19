@@ -120,12 +120,29 @@ def _view(req: Request) -> dict[str, Any]:
         "account": res.get("account"), "credits_used": res.get("credits_used"),
         "error": req.error, "takes": res.get("takes") or [],
     }
+    p = req.params or {}
+    out.update({
+        "title": p.get("title") or "Untitled", "sound_prompt": p.get("sound_prompt"),
+        "lyrics": p.get("lyrics"), "instrumental": bool(p.get("instrumental")),
+        "model": p.get("model"), "takes_wanted": p.get("takes") or 1,
+        "formats": p.get("formats") or ["mp3"], "stems_wanted": bool(p.get("stems")),
+        "seed": p.get("seed"), "account_wanted": p.get("account"),
+        "clip_id": p.get("clip_id"), "node_id": req.node_id,
+        "created_at": _iso(req.created_at), "finished_at": _iso(req.finished_at),
+    })
     if req.type == "stems_music":
         out["stems"] = res.get("stems") or {}
     if res.get("error_detail"):
         out["error_detail"] = res["error_detail"]
     return out
 
+
+def _iso(d: Optional[datetime]) -> Optional[str]:
+    if d is None:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.isoformat()
 
 def _owned(req: Optional[Request]) -> Request:
     if req is None or req.type not in _MUSIC_TYPES:
@@ -135,6 +152,37 @@ def _owned(req: Optional[Request]) -> Request:
         raise HTTPException(404, "request not found")
     return req
 
+
+@router.get("/requests")
+def list_music_requests(limit: int = 50, before: Optional[int] = None,
+                        status: Optional[str] = None, type: Optional[str] = None):
+    """Caller's music requests, newest first (UI queue + library).
+    Paginate with ``before=<next_before>``. ``status`` is a comma list."""
+    limit = max(1, min(limit, 200))
+    uid = current_user_id.get()
+    types = (type,) if type in _MUSIC_TYPES else _MUSIC_TYPES
+    want = {x.strip() for x in status.split(",")} if status else None
+    alias = {"cancelled": "canceled"}
+    if want:
+        want |= {alias[w] for w in want if w in alias}
+        if "failed" in want:
+            want.add("timeout")
+    items: list[dict] = []
+    with get_session() as s:
+        q = select(Request).where(Request.type.in_(types)).order_by(Request.id.desc())
+        if before is not None:
+            q = q.where(Request.id < before)
+        for req in s.exec(q):
+            if uid is not None and (req.params or {}).get("_user_id") not in (None, uid):
+                continue
+            if want and req.status not in want:
+                continue
+            items.append(_view(req))
+            if len(items) >= limit + 1:
+                break
+    more = len(items) > limit
+    items = items[:limit]
+    return {"items": items, "next_before": int(items[-1]["request_id"]) if more else None}
 
 @router.get("/requests/{request_id}")
 def get_music_request(request_id: int):

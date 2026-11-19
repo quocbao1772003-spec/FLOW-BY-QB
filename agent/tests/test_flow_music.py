@@ -329,3 +329,48 @@ def test_music_is_scoped_per_user(client, monkeypatch, tmp_path):
     account_pool._reset_for_tests()
     account_pool._state_path = None
     svc._invalidate_cache()
+
+# ── list endpoint (UI queue + library) ─────────────────────────────────────
+def test_list_music_requests_newest_first_paginated_and_filtered(client, monkeypatch):
+    from flowboard.worker import processor
+
+    monkeypatch.setattr(processor.get_worker(), "enqueue", lambda rid: None)
+    ids = [client.post("/api/music/generate", json={"sound_prompt": f"p{i}", "title": f"T{i}",
+                                                    "lyrics": "[Verse]\nla"}).json()["request_id"]
+           for i in range(3)]
+    client.post(f"/api/music/requests/{ids[0]}/cancel")
+    r = client.get("/api/music/requests?limit=2").json()
+    got = [x["request_id"] for x in r["items"]]
+    assert got == [ids[2], ids[1]] and r["next_before"] == int(ids[1])
+    first = r["items"][0]
+    assert first["title"] == "T2" and first["sound_prompt"] == "p2" and first["lyrics"] == "[Verse]\nla"
+    assert first["created_at"] and first["status"] == "queued" and first["takes_wanted"] == 1
+    r2 = client.get(f"/api/music/requests?limit=2&before={r['next_before']}").json()
+    assert ids[0] in [x["request_id"] for x in r2["items"]]
+    c = client.get("/api/music/requests?status=cancelled").json()["items"]
+    assert ids[0] in [x["request_id"] for x in c] and all(x["status"] == "cancelled" for x in c)
+
+
+def test_gen_music_with_stems_option_splits_each_take(tmp_path, monkeypatch):
+    from flowboard.worker import processor
+
+    async def fake_job(params, pool, out_dir, **kw):
+        return {"takes": [{"clip_id": "c1", "files": {"mp3": "a-1.mp3"}},
+                          {"clip_id": "c2", "files": {"mp3": "a-2.mp3"}}],
+                "account": "x@y.test", "credits_used": 10}, None
+
+    calls = []
+
+    async def fake_stems(params, pool, out_dir, **kw):
+        calls.append((params["clip_id"], params["account"], out_dir.name))
+        if params["clip_id"] == "c2":
+            return {"error_detail": "nope"}, "stems_failed"
+        return {"stems": {"vocals": "vocals.mp3"}}, None
+
+    monkeypatch.setattr(fm, "run_job", fake_job)
+    monkeypatch.setattr(fm, "run_stems", fake_stems)
+    res, err = run(processor._handle_gen_music({"sound_prompt": "p", "stems": True, "__request_id": 7}))
+    assert err is None
+    assert calls == [("c1", "x@y.test", "1"), ("c2", "x@y.test", "2")]
+    assert res["takes"][0]["stems"] == {"vocals": "/api/music/media/7/stems/1/vocals.mp3"}
+    assert res["takes"][1]["stems_error"] == "nope" and "stems" not in res["takes"][1]
