@@ -109,10 +109,25 @@ def bridge_call(client: Any) -> Call:
     return call
 
 
+PUBLIC_CLIP_URL = "https://storage.googleapis.com/producer-app-public/clips/{clip}.{ext}"
+
+def _is_http(url: Any) -> bool:
+    return isinstance(url, str) and url.startswith("https://")
+
+async def _fetch_public(url: str) -> bytes:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=20.0), follow_redirects=True) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        return r.content
+
 class FlowMusic:
-    def __init__(self, call: Call, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
+    def __init__(self, call: Call, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                 fetch: Optional[Callable[[str], Awaitable[bytes]]] = None) -> None:
         self.call = call
         self.sleep = sleep
+        self.fetch = fetch or _fetch_public
 
     async def _must(self, what: str, path: str, **kw) -> Any:
         r = await self.call(path, **kw)
@@ -194,12 +209,16 @@ class FlowMusic:
             return info["ops"]
         if info["blocked"]:
             raise MusicError("blocked_content", "; ".join(info["errors"])[:200])
-        for i in range(tries):
+        # "Error while streaming parts" usually still makes the song: the operation shows up
+        # in the conversation later, so give it longer before giving up.
+        streaming_error = any("streaming" in e.lower() for e in info["errors"])
+        rounds = tries * 4 if streaming_error else tries
+        for i in range(rounds):
             found = await self.find_in_conversation(conv)
             if found["ops"]:
                 return found["ops"][-1:]
-            if i < tries - 1:
-                await self.sleep(gap_s)
+            if i < rounds - 1:
+                await self.sleep(gap_s * (2 if streaming_error and i >= tries else 1))
         raise MusicError("flowmusic_api_changed", "operation_id not found: " + "; ".join(info["errors"])[:200])
 
     async def op_status(self, op: str) -> dict:
@@ -226,12 +245,25 @@ class FlowMusic:
         d = await self._must("clips", "/clips", method="POST", body={"clip_ids": ids})
         return (d or {}).get("clips") or {}
 
-    async def download_audio(self, clip_id: str, fmt: str = "mp3") -> bytes:
+    async def download_audio(self, clip_id: str, fmt: str = "mp3", public_url: Optional[str] = None) -> bytes:
+        """Through the signed-in tab first; if that fails (the tab was closed, the extension
+        dropped, a 3-minute timeout on a large WAV), the clip's public GCS file is the same
+        audio, so the song that Flow Music already made (and charged for) is not lost."""
         q = "" if fmt == "m4a" else f"?format={fmt}"
         r = await self.call(f"/download/audio/{clip_id}{q}", mode="base64", timeout_ms=180000)
-        if not r or not r.get("ok"):
-            raise classify(r, f"download {fmt}")
-        return base64.b64decode(r.get("data") or "")
+        if r and r.get("ok"):
+            return base64.b64decode(r.get("data") or "")
+        err = classify(r, f"download {fmt}")
+        url = public_url or PUBLIC_CLIP_URL.format(clip=clip_id, ext="wav" if fmt == "wav" else "m4a")
+        try:
+            data = await self.fetch(url)
+        except Exception as exc:  # noqa: BLE001 - the bridge error is the one worth reporting
+            logger.warning("public download %s failed: %s", url, exc)
+            raise err from exc
+        if not data:
+            raise err
+        logger.info("clip %s %s: tab download failed (%s), used the public file", clip_id, fmt, err.code)
+        return data
 
     async def stems(self, clip_id: str) -> dict[str, bytes]:
         d = await self._must("stems", f"/stems/clip/{clip_id}", timeout_ms=180000)
@@ -302,7 +334,8 @@ async def generate_songs(fm: FlowMusic, params: dict, out_dir: Path, *,
                 base = f"{_slug(title)}-{len(takes) + 1}"
                 files = {}
                 for fmt in formats:
-                    data = await fm.download_audio(clip_id, fmt)
+                    public = info.get("wav_url") if fmt == "wav" else (info.get("audio_url") if fmt != "wav" else None)
+                    data = await fm.download_audio(clip_id, fmt, public_url=public if _is_http(public) else None)
                     p = out_dir / f"{base}.{fmt}"
                     p.write_bytes(data)
                     files[fmt] = p.name

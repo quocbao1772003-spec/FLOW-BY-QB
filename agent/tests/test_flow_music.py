@@ -374,3 +374,54 @@ def test_gen_music_with_stems_option_splits_each_take(tmp_path, monkeypatch):
     assert calls == [("c1", "x@y.test", "1"), ("c2", "x@y.test", "2")]
     assert res["takes"][0]["stems"] == {"vocals": "/api/music/media/7/stems/1/vocals.mp3"}
     assert res["takes"][1]["stems_error"] == "nope" and "stems" not in res["takes"][1]
+
+
+class DownloadFailsBridge(FakeBridge):
+    """The tab makes the song, then drops while the WAV comes down (seen 20/11)."""
+
+    async def __call__(self, path, method="GET", body=None, mode="json", timeout_ms=0):
+        if path.startswith("/download/audio/"):
+            self.calls.append((method, path, body))
+            return {"ok": False, "status": 0, "error": "extension_disconnected"}
+        return await super().__call__(path, method, body, mode, timeout_ms)
+
+def test_download_falls_back_to_public_clip_file(tmp_path):
+    fetched = []
+
+    async def fetch(url):
+        fetched.append(url)
+        return b"RIFFwav"
+
+    b = DownloadFailsBridge()
+    res = run(fm.generate_songs(FlowMusic(b, _nosleep, fetch), {"sound_prompt": "p", "formats": ["wav"]},
+                                tmp_path, poll_s=0))
+    assert fetched == ["https://storage.googleapis.com/producer-app-public/clips/" + CLIP + ".wav"]
+    assert (tmp_path / res["takes"][0]["files"]["wav"]).read_bytes() == b"RIFFwav"
+
+def test_download_failure_reported_when_public_file_also_fails(tmp_path):
+    async def fetch(url):
+        raise RuntimeError("404")
+
+    with pytest.raises(MusicError) as e:
+        run(fm.generate_songs(FlowMusic(DownloadFailsBridge(), _nosleep, fetch),
+                              {"sound_prompt": "p", "formats": ["wav"]}, tmp_path, poll_s=0))
+    assert e.value.code == "extension_offline"
+
+def test_streaming_error_waits_longer_for_the_operation(tmp_path):
+    class Late(FakeBridge):
+        def __init__(self):
+            super().__init__(sse_error=True)
+            self.reads = 0
+
+        async def __call__(self, path, method="GET", body=None, mode="json", timeout_ms=0):
+            if path.startswith("/conversations/"):
+                self.reads += 1
+                if self.reads < 10:  # beyond the old 6 tries
+                    self.calls.append((method, path, body))
+                    return {"ok": True, "status": 200, "data": {"messages": []}}
+            return await super().__call__(path, method, body, mode, timeout_ms)
+
+    b = Late()
+    res = run(fm.generate_songs(FlowMusic(b, _nosleep), {"sound_prompt": "p", "formats": ["mp3"]},
+                                tmp_path, poll_s=0))
+    assert len(res["takes"]) == 1 and b.reads == 10
