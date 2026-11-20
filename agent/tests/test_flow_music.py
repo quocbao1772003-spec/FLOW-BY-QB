@@ -425,3 +425,45 @@ def test_streaming_error_waits_longer_for_the_operation(tmp_path):
     res = run(fm.generate_songs(FlowMusic(b, _nosleep), {"sound_prompt": "p", "formats": ["mp3"]},
                                 tmp_path, poll_s=0))
     assert len(res["takes"]) == 1 and b.reads == 10
+
+
+class SlowTabBridge(FakeBridge):
+    """Tab downloads are slow (base64 through the extension); public GCS is fast."""
+
+    async def __call__(self, path, method="GET", body=None, mode="json", timeout_ms=0):
+        if path.startswith("/download/audio/"):
+            self.calls.append((method, path, body))
+            await asyncio.sleep(0.6)
+        return await super().__call__(path, method, body, mode, timeout_ms)
+
+
+def test_formats_download_in_parallel_and_public_file_wins_when_faster(tmp_path):
+    import time
+
+    async def fetch(url):
+        await asyncio.sleep(0.05)
+        return b"RIFFwav" if url.endswith(".wav") else b"\x00\x00\x00\x18ftypm4a"
+
+    t0 = time.monotonic()
+    res = run(fm.generate_songs(FlowMusic(SlowTabBridge(), _nosleep, fetch),
+                                {"sound_prompt": "p", "formats": ["mp3", "wav"]}, tmp_path, poll_s=0))
+    dt = time.monotonic() - t0
+    files = res["takes"][0]["files"]
+    assert set(files) == {"mp3", "wav"}
+    assert (tmp_path / files["wav"]).read_bytes() == b"RIFFwav"
+    assert dt < 0.5  # serial tab downloads would take >= 1.2s
+
+
+def test_one_format_failing_everywhere_still_raises(tmp_path):
+    async def fetch(url):
+        raise RuntimeError("404")
+
+    with pytest.raises(MusicError):
+        run(fm.generate_songs(FlowMusic(DownloadFailsBridge(), _nosleep, fetch),
+                              {"sound_prompt": "p", "formats": ["mp3", "wav"]}, tmp_path, poll_s=0))
+
+
+def test_poll_interval_is_dense_after_20s():
+    assert FlowMusic._next_poll(30, 5) == 2.0
+    assert FlowMusic._next_poll(5, 5) == 4.0
+    assert FlowMusic._next_poll(5, 0) == 0

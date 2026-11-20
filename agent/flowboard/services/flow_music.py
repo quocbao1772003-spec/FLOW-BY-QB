@@ -202,8 +202,8 @@ class FlowMusic:
             "clips": _uniq(re.findall(rf'"clip_id"\s*:\s*"({_UUID})"', s)),
         }
 
-    async def resolve_operations(self, conv: str, job_id: str, *, tries: int = 6,
-                                 gap_s: float = 3.0) -> list[str]:
+    async def resolve_operations(self, conv: str, job_id: str, *, tries: int = 12,
+                                 gap_s: float = 1.5) -> list[str]:
         info = await self.read_job(job_id)
         if info["ops"]:
             return info["ops"]
@@ -224,9 +224,17 @@ class FlowMusic:
     async def op_status(self, op: str) -> dict:
         return await self._must("status", f"/audio-create-song-status/{op}")
 
+    @staticmethod
+    def _next_poll(elapsed: float, base: float) -> float:
+        # a song takes ~35-60s: poll sparsely at first, densely once it can finish
+        if base <= 2.0:
+            return base
+        return base * 0.8 if elapsed < 20 else min(base, 2.0)
+
     async def wait_operation(self, op: str, *, timeout_s: float = 600, poll_s: float = 5,
                              is_canceled: Optional[Callable[[], bool]] = None) -> dict:
-        end = time.monotonic() + timeout_s
+        t0 = time.monotonic()
+        end = t0 + timeout_s
         while True:
             s = await self.op_status(op)
             st = (s or {}).get("status")
@@ -239,7 +247,7 @@ class FlowMusic:
                 raise MusicError("cancelled")
             if time.monotonic() > end:
                 raise MusicError("timeout", "waiting for song")
-            await self.sleep(poll_s)
+            await self.sleep(self._next_poll(time.monotonic() - t0, poll_s))
 
     async def clips(self, ids: list[str]) -> dict:
         d = await self._must("clips", "/clips", method="POST", body={"clip_ids": ids})
@@ -250,20 +258,44 @@ class FlowMusic:
         dropped, a 3-minute timeout on a large WAV), the clip's public GCS file is the same
         audio, so the song that Flow Music already made (and charged for) is not lost."""
         q = "" if fmt == "m4a" else f"?format={fmt}"
-        r = await self.call(f"/download/audio/{clip_id}{q}", mode="base64", timeout_ms=180000)
-        if r and r.get("ok"):
-            return base64.b64decode(r.get("data") or "")
-        err = classify(r, f"download {fmt}")
         url = public_url or PUBLIC_CLIP_URL.format(clip=clip_id, ext="wav" if fmt == "wav" else "m4a")
-        try:
+
+        async def via_tab() -> bytes:
+            r = await self.call(f"/download/audio/{clip_id}{q}", mode="base64", timeout_ms=180000)
+            if r and r.get("ok"):
+                return base64.b64decode(r.get("data") or "")
+            raise classify(r, f"download {fmt}")
+
+        async def via_public() -> bytes:
             data = await self.fetch(url)
-        except Exception as exc:  # noqa: BLE001 - the bridge error is the one worth reporting
-            logger.warning("public download %s failed: %s", url, exc)
-            raise err from exc
-        if not data:
-            raise err
-        logger.info("clip %s %s: tab download failed (%s), used the public file", clip_id, fmt, err.code)
-        return data
+            if not data:
+                raise ValueError("empty public file")
+            return data
+
+        # race both routes: the public GCS file is the same audio and is usually much
+        # faster than base64 through the extension; the first success wins.
+        tab = asyncio.ensure_future(via_tab())
+        pub = asyncio.ensure_future(via_public())
+        pending = {tab, pub}
+        tab_err: Optional[BaseException] = None
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for t in done:
+                    exc = t.exception()
+                    if exc is None:
+                        return t.result()
+                    if t is tab:
+                        tab_err = exc
+                    else:
+                        logger.warning("public download %s failed: %s", url, exc)
+            if isinstance(tab_err, MusicError):
+                raise tab_err
+            raise MusicError("flowmusic_api_changed", f"download {fmt}: {tab_err}")
+        finally:
+            for t in (tab, pub):
+                if not t.done():
+                    t.cancel()
 
     async def stems(self, clip_id: str) -> dict[str, bytes]:
         d = await self._must("stems", f"/stems/clip/{clip_id}", timeout_ms=180000)
@@ -329,13 +361,21 @@ async def generate_songs(fm: FlowMusic, params: dict, out_dir: Path, *,
                 if clip_id in seen_clips:
                     continue
                 seen_clips.add(clip_id)
-                info = (await fm.clips([clip_id])).get(clip_id) or {}
+                # fetch metadata and every format at the same time (public URLs are
+                # deterministic from clip_id; tab download is the fallback)
+                info_t = asyncio.ensure_future(fm.clips([clip_id]))
+                dl_t = [asyncio.ensure_future(fm.download_audio(clip_id, fmt)) for fmt in formats]
+                try:
+                    info = (await info_t).get(clip_id) or {}
+                    blobs = await asyncio.gather(*dl_t)
+                except BaseException:
+                    for t in [info_t, *dl_t]:
+                        t.cancel()
+                    raise
                 title = info.get("title") or params.get("title") or "Untitled"
                 base = f"{_slug(title)}-{len(takes) + 1}"
                 files = {}
-                for fmt in formats:
-                    public = info.get("wav_url") if fmt == "wav" else (info.get("audio_url") if fmt != "wav" else None)
-                    data = await fm.download_audio(clip_id, fmt, public_url=public if _is_http(public) else None)
+                for fmt, data in zip(formats, blobs):
                     p = out_dir / f"{base}.{fmt}"
                     p.write_bytes(data)
                     files[fmt] = p.name
