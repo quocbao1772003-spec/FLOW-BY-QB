@@ -1,0 +1,4 @@
+- video: Flow Video (compose, queue 6 rows, drawer) xong, lint 0
+- accounts: khoi Flow Video moi the + canh bao debugger, lint 0
+- canvas-node: dang tao + xong, lint 0
+- noacc/empty: xong, lint 0. Chi dark; 390/1366/1920

@@ -1,0 +1,92 @@
+[
+ {
+  "file": "video-queue__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-queue__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-queue__1920.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-compose-mobile__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-drawer-running__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-drawer-running__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-drawer-failed__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-drawer-done__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-noacc__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-noacc__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-empty__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "video-empty__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "accounts__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "accounts__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "accounts__1920.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "canvas-node__390.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "canvas-node__1366.png",
+  "errs": [],
+  "issues": []
+ },
+ {
+  "file": "canvas-node__1920.png",
+  "errs": [],
+  "issues": []
+ }
+]
