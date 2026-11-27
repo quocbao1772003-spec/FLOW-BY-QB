@@ -108,7 +108,7 @@ async def _nudge_identity(client, websocket) -> None:
 
 
 async def run_ws_server() -> None:
-    async with websockets.serve(_handler, WS_HOST, EXTENSION_WS_PORT):
+    async with websockets.serve(_handler, WS_HOST, EXTENSION_WS_PORT, max_size=None):
         logger.info("WebSocket server listening on ws://%s:%d", WS_HOST, EXTENSION_WS_PORT)
         await asyncio.Future()  # run forever
 

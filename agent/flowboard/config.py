@@ -14,4 +14,7 @@ PLANNER_MODEL = os.getenv("FLOWBOARD_PLANNER_MODEL", "claude-sonnet-4-6")
 # otherwise mock. Default auto.
 PLANNER_BACKEND = os.getenv("FLOWBOARD_PLANNER_BACKEND", "auto")
 
+# Flow Video via the signed-in Flow tab (extension video_ui_call) instead of the API path.
+VIDEO_VIA_TAB = os.getenv("VIDEO_VIA_TAB", "").strip().lower() in ("1", "true", "yes", "on")
+
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)

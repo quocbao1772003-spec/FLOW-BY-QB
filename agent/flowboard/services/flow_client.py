@@ -300,6 +300,14 @@ class FlowClient:
             return
         if t == "pong":
             return
+        if t == "video_ui_progress":
+            from flowboard.services import flow_video_ui
+            flow_video_ui.on_progress(data)
+            return
+        if t == "video_ui_chunk":
+            from flowboard.services import flow_video_ui
+            flow_video_ui.on_chunk(data)
+            return
         # Inbound response (legacy path; production flow uses HTTP callback)
         req_id = data.get("id")
         if req_id and req_id in self._pending:

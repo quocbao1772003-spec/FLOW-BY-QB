@@ -2,3 +2,4 @@
 - accounts: khoi Flow Video moi the + canh bao debugger, lint 0
 - canvas-node: dang tao + xong, lint 0
 - noacc/empty: xong, lint 0. Chi dark; 390/1366/1920
+- 1 backend: flow_video_ui service/routes/processor/MCP flag/tests xong

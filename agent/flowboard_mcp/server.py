@@ -350,6 +350,9 @@ async def _report(req: dict, node_id: Optional[int], return_images: bool) -> lis
         out["account_switches"] = result["account_switches"]
     if status == "done":
         out["media_ids"] = result.get("media_ids")
+        if req.get("type") == "gen_video_ui":
+            out["media_url"] = f"/api/video-ui/requests/{req.get('id')}/media"
+            out["size"] = result.get("size")
         if result.get("partial_error"):
             out["partial_error"] = result["partial_error"]
         if result.get("slot_errors") and any(result["slot_errors"]):
@@ -892,6 +895,17 @@ async def generate_video(
         else:
             params["start_media_id"] = _resolve_media_from_node(first, variant_index)
             variants = 1
+    if model == "veo" and os.getenv("VIDEO_VIA_TAB", "").strip().lower() in ("1", "true", "yes", "on"):
+        # Flow Video through the signed-in Flow tab (extension) instead of the API path.
+        rtype = "gen_video_ui"
+        params = {
+            "prompt": prompt, "start_image": {"node_id": sources[0]["id"]},
+            "model": "veo_quality" if quality == "quality" else "veo_fast",
+            "aspect": "16:9" if aspect == VIDEO_ASPECTS["16:9"] else "9:16",
+            "variants": 1, "source": "api",
+            "client_ref": f"mcp:{target['id']}:{int(time.time())}",
+        }
+        variants = 1
     await _mark_queued(target["id"], prompt, variants)
     req = await _dispatch(target["id"], rtype, params)
     req = await _wait(req["id"], wait_seconds)

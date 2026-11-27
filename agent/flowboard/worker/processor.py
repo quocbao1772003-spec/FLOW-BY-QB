@@ -878,7 +878,88 @@ async def _handle_stems_music(params: dict) -> tuple[dict, Optional[str]]:
     return result, err
 
 
+def _video_ui_step_writer(rid: Optional[int]):
+    def on_step(key: str, ok: Optional[bool]) -> None:
+        if not isinstance(rid, int):
+            return
+        try:
+            with get_session() as s:
+                req = s.get(Request, rid)
+                if req is None:
+                    return
+                p = dict(req.params or {})
+                from flowboard.services.flow_video_ui import STEPS
+                steps = [dict(x) for x in (p.get("steps") or [])] or [
+                    {"key": k, "label": lbl, "at": None, "ok": None} for k, lbl in STEPS]
+                now = datetime.now(timezone.utc).isoformat()
+                idx = next((i for i, x in enumerate(steps) if x.get("key") == key), None)
+                if idx is None:
+                    return
+                steps[idx].update({"at": now, "ok": True if ok is None else bool(ok)})
+                for j in range(idx):
+                    if steps[j].get("ok") is None:
+                        steps[j].update({"at": now, "ok": True})
+                p["steps"] = steps
+                req.params = p
+                s.add(req)
+                s.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("video_ui step write failed")
+    return on_step
+
+async def _resolve_video_ui_image(si: dict) -> Optional[dict]:
+    """start_image {media_id|node_id|url|b64} -> {b64,name} | {url,name}."""
+    import base64
+    from flowboard.db.models import Node
+    from flowboard.services import media as media_service
+
+    name = si.get("name")
+    if si.get("b64"):
+        return {"b64": si["b64"], "name": name}
+    if si.get("url"):
+        return {"url": si["url"], "name": name}
+    media_id = si.get("media_id")
+    if not media_id and si.get("node_id") is not None:
+        with get_session() as s:
+            node = s.get(Node, si["node_id"])
+            data = (node.data or {}) if node else {}
+        ids = [m for m in (data.get("mediaIds") or []) if m]
+        media_id = data.get("mediaId") or (ids[0] if ids else None)
+    if not media_id:
+        return None
+    media_id = media_service.normalize_media_id(media_id)
+    path = media_service.cached_path(media_id)
+    if path is None:
+        got = await media_service.fetch_and_cache(media_id)
+        path = got[2] if got else None
+    if path is None:
+        return None
+    return {"b64": base64.b64encode(path.read_bytes()).decode(), "name": name or f"{media_id}{path.suffix}"}
+
+async def _handle_gen_video_ui(params: dict) -> tuple[dict, Optional[str]]:
+    """Flow Video via the signed-in Flow tab; mp4 lands in storage/video_ui/<rid>.mp4."""
+    from flowboard.config import STORAGE_DIR
+    from flowboard.services import flow_video_ui
+    from flowboard.services.flow_client import account_pool
+
+    if not str(params.get("prompt") or "").strip():
+        return {}, "invalid_params:prompt"
+    rid = params.get("__request_id")
+    image = await _resolve_video_ui_image(params.get("start_image") or {})
+    if image is None:
+        return {"error_detail": "start image not found"}, "UI_NOT_FOUND"
+    if not image.get("name"):
+        image["name"] = flow_video_ui.safe_name(params.get("client_ref") or f"req{rid}") + ".png"
+    job = dict(params)
+    job["image"] = image
+    result, err = await flow_video_ui.run_job(
+        job, account_pool, STORAGE_DIR / "video_ui" / f"{rid or 'adhoc'}.mp4",
+        on_step=_video_ui_step_writer(rid), is_canceled=_music_canceled(rid),
+    )
+    return result, err
+
 _DEFAULT_HANDLERS: dict[str, Handler] = {
+    "gen_video_ui": _handle_gen_video_ui,
     "gen_music": _handle_gen_music,
     "stems_music": _handle_stems_music,
     "proxy": _handle_proxy,
@@ -1163,7 +1244,29 @@ def finalize_node_for_request(rid: int) -> bool:
             board_id = node.board_id
             sync_state.bump(board_id)
             return True
-        if req.status == "done":
+        if req.type == "gen_video_ui":
+            if req.status == "done":
+                node.status = "done"
+                data.update({"prompt": params.get("prompt") or data.get("prompt"),
+                             "videoUiUrl": f"/api/video-ui/requests/{req.id}/media",
+                             "videoUiRequestId": req.id, "renderedAt": now,
+                             "flowAccount": result.get("account"), "variantCount": 1})
+                data.pop("error", None)
+            elif req.status == "canceled":
+                node.status = "idle"
+            else:
+                node.status = "error"
+                data["error"] = req.error or "failed"
+            node.data = data
+            result["_node_finalized"] = True
+            req.result = result
+            s.add(node)
+            s.add(req)
+            s.commit()
+            board_id = node.board_id
+            sync_state.bump(board_id)
+            return True
+        if req.status == "done":
             media_ids = [m if isinstance(m, str) and m else None
                          for m in (result.get("media_ids") or [])]
             media_id = next((m for m in media_ids if m), None)

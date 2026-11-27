@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Header, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 
-from flowboard.config import WS_HOST
+from flowboard.config import VIDEO_VIA_TAB, WS_HOST
 
 # Slim Docker images ship no /etc/mime.types: register what the UI serves.
 mimetypes.add_type("image/webp", ".webp")
@@ -25,6 +25,7 @@ from flowboard.services import sync as sync_state
 from flowboard.routes import references as references_route
 from flowboard.routes import requests as requests_route
 from flowboard.routes import music as music_route
+from flowboard.routes import video_ui as video_ui_route
 from flowboard.services.flow_client import account_pool, flow_client
 from flowboard.services.ws_server import run_ws_server
 from flowboard.worker.processor import get_worker, reset_image_project_session
@@ -224,6 +225,7 @@ app.include_router(flow_projects.router)
 app.include_router(references_route.router)
 app.include_router(requests_route.router)
 app.include_router(music_route.router)
+app.include_router(video_ui_route.router)
 app.include_router(media.bytes_router)
 app.include_router(media.api_router)
 app.include_router(upload.router)
@@ -261,6 +263,7 @@ def health() -> dict:
         "ok": True,
         "extension_connected": flow_client.connected,
         "ws_stats": flow_client.ws_stats,
+        "video_via_tab": VIDEO_VIA_TAB,
     }
 
 
