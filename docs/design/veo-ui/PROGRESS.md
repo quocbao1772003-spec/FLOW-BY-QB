@@ -4,3 +4,5 @@
 - noacc/empty: xong, lint 0. Chi dark; 390/1366/1920
 - 1 backend: flow_video_ui service/routes/processor/MCP flag/tests xong
 - 2 extension: video-ui.js + cdp-input.js, manifest 0.2.4, 8 buoc + settings/frames/cost/download quality, test xong; backend cap nhat contract 27/11
+- 3 frontend: FlowVideoPage + video.css + sidebar + accounts block + node chip + gen via tab (health.video_via_tab); vite build OK (tsc co loi san, khong o file moi)
+- 4 docs: extension/AGENTS.md 0.2.4. Chua chay Flow that (de Opus).

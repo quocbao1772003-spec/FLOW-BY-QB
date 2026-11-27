@@ -95,6 +95,11 @@ export interface FlowboardNodeData extends Record<string, unknown> {
   // plain text in that case so the user knows it's an estimate.
   imageModel?: string;
   videoQuality?: string;
+  // Flow Video via the Flow tab: request id, current step (0..8), label, finished mp4 url.
+  videoUiRequestId?: number;
+  videoUiStep?: number;
+  videoUiLabel?: string;
+  videoUiUrl?: string;
   // Character-builder selections — persisted on dispatch so the detail
   // panel can show "Country / Vibe / Gender" pills under METADATA. Keys
   // (`vn`, `clean`, `female`) match the constants in
@@ -378,6 +383,10 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           aiBrief: n.data["aiBrief"] as string | undefined,
           imageModel: n.data["imageModel"] as string | undefined,
           videoQuality: n.data["videoQuality"] as string | undefined,
+          videoUiRequestId: n.data["videoUiRequestId"] as number | undefined,
+          videoUiStep: n.data["videoUiStep"] as number | undefined,
+          videoUiLabel: n.data["videoUiLabel"] as string | undefined,
+          videoUiUrl: n.data["videoUiUrl"] as string | undefined,
           charCountry: n.data["charCountry"] as string | undefined,
           charVibe: n.data["charVibe"] as string | undefined,
           charGender: n.data["charGender"] as string | undefined,

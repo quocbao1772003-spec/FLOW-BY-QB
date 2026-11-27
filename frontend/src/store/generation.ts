@@ -1,7 +1,68 @@
 import { create } from "zustand";
-import { ensureBoardProject, createRequest, getRequest, patchNode } from "../api/client";
+import { ensureBoardProject, createRequest, getRequest, getHealth, patchNode } from "../api/client";
+import { generateVideoUi, VIDEO_STEPS, type VideoUiRequest } from "../api/videoUi";
+import { api } from "../api/client";
 import { useBoardStore } from "./board";
 import { useSettingsStore } from "./settings";
+
+const VIDEO_UI_ASPECT = (a?: string): "16:9" | "9:16" => (a && a.includes("PORTRAIT") ? "9:16" : "16:9");
+
+async function dispatchViaTab(
+  rfId: string,
+  opts: { prompt: string; aspectRatio?: string; sourceMediaId?: string },
+  set: (p: Partial<GenerationState> | ((s: GenerationState) => Partial<GenerationState>)) => void,
+  get: () => GenerationState,
+): Promise<void> {
+  const board = useBoardStore.getState();
+  const nodeDbId = parseInt(rfId, 10);
+  try {
+    const q = await generateVideoUi({
+      prompt: opts.prompt,
+      start_image: { media_id: opts.sourceMediaId },
+      aspect: VIDEO_UI_ASPECT(opts.aspectRatio),
+      node_id: isNaN(nodeDbId) ? null : nodeDbId,
+      client_ref: `node:${rfId}:${Date.now()}`,
+    });
+    const requestId = q.request_id;
+    set((s) => ({ active: { ...s.active, [rfId]: { requestId, timerId: null } } }));
+    const tick = async (): Promise<void> => {
+      if (get().active[rfId] === undefined) return;
+      try {
+        const r = await api<VideoUiRequest>(`/api/video-ui/requests/${requestId}`);
+        if (r.status === "queued" || r.status === "running") {
+          const n = Math.min(r.step, VIDEO_STEPS.length - 1);
+          board.updateNodeData(rfId, { status: "running", videoUiRequestId: requestId, videoUiStep: r.step, videoUiLabel: VIDEO_STEPS[n] });
+          setTimeout(tick, 3000);
+          return;
+        }
+        set((s) => {
+          const next = { ...s.active };
+          delete next[rfId];
+          return { active: next };
+        });
+        if (r.status === "done" && r.result) {
+          board.updateNodeData(rfId, {
+            status: "done", videoUiRequestId: requestId, videoUiUrl: r.result.media_url,
+            videoUiStep: undefined, videoUiLabel: undefined, error: undefined, renderedAt: new Date().toISOString(),
+          });
+        } else if (r.status === "cancelled") {
+          board.updateNodeData(rfId, { status: "idle", videoUiStep: undefined, videoUiLabel: undefined });
+        } else {
+          const msg = r.error?.message ?? "Không tạo được video";
+          board.updateNodeData(rfId, { status: "error", error: msg, videoUiStep: undefined, videoUiLabel: undefined });
+          set({ error: msg });
+        }
+      } catch {
+        setTimeout(tick, 5000);
+      }
+    };
+    setTimeout(tick, 2000);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    board.updateNodeData(rfId, { status: "error", error: msg });
+    set({ error: msg });
+  }
+}
 
 type PollEntry = { requestId: number; timerId: ReturnType<typeof setTimeout> | null };
 
@@ -229,6 +290,19 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
 
     // Create request
     const kind = opts.kind ?? "image";
+    // Flow Video via the Flow tab (server flag VIDEO_VIA_TAB): one start frame -> gen_video_ui.
+    if (kind === "video" && useSettingsStore.getState().videoModel !== "omni_flash" && opts.sourceMediaId) {
+      let viaTab = false;
+      try {
+        viaTab = !!(await getHealth()).video_via_tab;
+      } catch {
+        viaTab = false;
+      }
+      if (viaTab) {
+        await dispatchViaTab(rfId, opts, set, get);
+        return;
+      }
+    }
     let reqDto;
     try {
       const nodeDbId = parseInt(rfId, 10);

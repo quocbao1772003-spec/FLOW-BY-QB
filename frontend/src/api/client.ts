@@ -102,6 +102,8 @@ export interface HealthResponse {
   ok: boolean;
   extension_connected: boolean;
   ws_stats?: WsStats;
+  /** VIDEO_VIA_TAB: node video gen goes through the Flow tab (gen_video_ui). */
+  video_via_tab?: boolean;
 }
 
 export function getHealth() {

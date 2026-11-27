@@ -1177,11 +1177,21 @@ function VideoBody({ rfId, data }: { rfId: string; data: FlowboardNodeData }) {
     );
   }
 
+  const viaTab = data.videoUiUrl && data.status === "done";
   return (
     <div className="node-body node-body--video">
-      <div className={`video-grid video-grid--${tileCount}`}>
-        {tiles}
-      </div>
+      {viaTab ? (
+        <video className="node-card__thumbnail" src={data.videoUiUrl} controls preload="metadata" aria-label={data.title} />
+      ) : (
+        <div className={`video-grid video-grid--${tileCount}`}>
+          {tiles}
+        </div>
+      )}
+      {isProcessing && data.videoUiStep != null && (
+        <span className="video-chip" title="Flow Video chạy trong tab Flow">
+          Qua tab Flow · {Math.min(8, data.videoUiStep + 1)}/8 {data.videoUiLabel ?? ""}
+        </span>
+      )}
       {(isError || isPartial) && data.error && (
         <p
           className={`node-error${isPartial ? " node-error--partial" : ""}`}

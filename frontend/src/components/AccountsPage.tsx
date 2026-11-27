@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { IconMusic, IconRefresh } from "../canvas/icons";
 import { musicAccounts, refreshMusicAccounts, type MusicAccount } from "../api/music";
+import { probeVideoUi, videoUiAccounts, type VideoUiAccount } from "../api/videoUi";
 import { McpLinkCard } from "./music/McpLinkCard";
 import { ChromePairing } from "./ChromePairing";
 import { ConnectGuide } from "./ConnectGuide";
@@ -93,6 +94,8 @@ export function AccountsPage() {
   const [copied, setCopied] = useState(false);
   const [music, setMusic] = useState<MusicAccount[]>([]);
   const [musicBusy, setMusicBusy] = useState(false);
+  const [vids, setVids] = useState<VideoUiAccount[]>([]);
+  const [vidBusy, setVidBusy] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -109,6 +112,12 @@ export function AccountsPage() {
       musicAccounts()
         .then((m) => alive && setMusic(m))
         .catch(() => {});
+    const pullVids = () =>
+      videoUiAccounts()
+        .then((v) => alive && setVids(v))
+        .catch(() => {});
+    void pullVids();
+    const vt = setInterval(pullVids, 15000);
     void pullMusic();
     const mt = setInterval(pullMusic, 15000);
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -120,6 +129,7 @@ export function AccountsPage() {
     return () => {
       alive = false;
       clearInterval(mt);
+      clearInterval(vt);
       if (t) clearTimeout(t);
     };
   }, []);
@@ -148,6 +158,22 @@ export function AccountsPage() {
     music.find((m) => m.email.toLowerCase() === (a.email ?? a.key).toLowerCase());
   const musicCredits = music.reduce((sum, m) => sum + (m.credits_remaining ?? 0), 0);
   const musicKnown = music.some((m) => m.credits_remaining !== null);
+
+  const vidOf = (a: FlowAccountRow) =>
+    vids.find((v) => v.email.toLowerCase() === (a.email ?? a.key).toLowerCase());
+
+  async function checkVideo(a: FlowAccountRow) {
+    if (vidBusy) return;
+    setVidBusy(a.key);
+    try {
+      await probeVideoUi(a.email ?? a.key);
+      setVids(await videoUiAccounts());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVidBusy(null);
+    }
+  }
 
   async function checkMusic() {
     if (musicBusy) return;
@@ -306,6 +332,9 @@ export function AccountsPage() {
                   {a.extension_version && <span>· extension {a.extension_version}</span>}
                 </div>
                 {a.connected && a.identified !== false && <MusicLine m={musicOf(a)} />}
+                {a.connected && a.identified !== false && (
+                  <VideoBlock v={vidOf(a)} busy={vidBusy === a.key} onCheck={() => void checkVideo(a)} />
+                )}
                 {a.connected && a.identified === false && (
                   <div className="account-card__note account-card__note--warn">
                     Trong profile Chrome này mở Google Flow và vào một project bất kỳ (trang flow.google.com/project/…).
@@ -509,6 +538,32 @@ function MusicLine({ m }: { m: MusicAccount | undefined }) {
       <IconMusic size={12} />
       <span className={`account-dot account-dot--${tone}`} aria-hidden="true" />
       <span>Flow Music · {text}</span>
+    </div>
+  );
+}
+
+const yn = (v: boolean | null | undefined) => (v === null || v === undefined ? "—" : v ? "Bật" : "Tắt");
+
+function VideoBlock({ v, busy, onCheck }: { v: VideoUiAccount | undefined; busy: boolean; onCheck(): void }) {
+  const leaving = (v?.models ?? []).filter((m) => m.leaving);
+  return (
+    <div className="video-acc">
+      <div className="video-acc__row"><span>Tab Flow</span><b>{v?.tab_open === null || v?.tab_open === undefined ? "—" : v.tab_open ? "Đang mở" : "Đóng"}</b></div>
+      <div className="video-acc__row"><span>Video không tiếng</span><b>{yn(v?.silent_on)}</b></div>
+      <div className="video-acc__row"><span>Luôn duyệt credit</span><b>{yn(v?.always_approve)}</b></div>
+      <div className="video-acc__row"><span>Credit Flow</span><b>{v?.credits == null ? "—" : v.credits.toLocaleString("vi-VN")}</b></div>
+      <div className="video-acc__foot">
+        <button type="button" className="accounts-btn" disabled={busy} onClick={onCheck} title="Mở Settings của tab Flow, đọc model + credit">
+          {busy ? "Đang kiểm…" : "Kiểm tra Flow Video"}
+        </button>
+        {v?.busy && <span className="account-tag account-tag--accent">Đang bận</span>}
+      </div>
+      {leaving.length > 0 && (
+        <div className="video-acc__note">{leaving.map((m) => `${m.label}: ${m.leaving}`).join(" · ")}</div>
+      )}
+      <div className="video-acc__note">
+        Khi duyệt credit hoặc tải video, Chrome hiện thanh “Flowboard Bridge đang gỡ lỗi trình duyệt” — bình thường, tự mất khi xong clip.
+      </div>
     </div>
   );
 }

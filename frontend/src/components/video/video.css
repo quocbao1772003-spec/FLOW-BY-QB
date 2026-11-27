@@ -1,0 +1,284 @@
+/* Flow Video tab — reuses music.css (layout, form, queue, badges). Only the
+   video-specific bits live here. Dark theme only (Lacquer Studio tokens). */
+
+.video-qrow.music-qhead,
+.video-qrow.music-qrow {
+  grid-template-columns: 48px minmax(160px, 1fr) 96px 220px 150px 56px 64px 112px;
+}
+.video-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+/* 8-segment step bar */
+.video-seg {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  height: 4px;
+}
+.video-seg i {
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+.video-seg i.d { background: var(--success); }
+.video-seg i.c { background: var(--accent-0); animation: video-pulse 1.2s ease-in-out infinite; }
+.video-seg i.f { background: var(--error); }
+@keyframes video-pulse { 50% { opacity: 0.4; } }
+
+/* keyframe picker */
+.video-kf {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px dashed var(--border-alpha-2, rgba(255, 255, 255, 0.16));
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg-3);
+  cursor: pointer;
+  overflow: hidden;
+}
+.video-kf img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.video-kf--set {
+  border-style: solid;
+}
+.video-kf__tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--warn-tint, rgba(242, 193, 78, 0.12));
+  color: var(--warn, #f2c14e);
+  font-size: 12px;
+}
+.video-warn--bar {
+  margin: 0 0 12px;
+}
+
+/* detail drawer */
+.video-drawer-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 50;
+}
+.video-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100vw);
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-modal, #19181c);
+  border-left: 1px solid var(--border-alpha-1, rgba(255, 255, 255, 0.09));
+  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.7);
+}
+.video-drawer__head,
+.video-drawer__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.video-drawer__head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+}
+.video-drawer__foot {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-alpha-0, rgba(255, 255, 255, 0.055));
+}
+.video-drawer__body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.video-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  background: #000;
+}
+.video-player--ph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--fg-3);
+  background: var(--surface-2);
+}
+.video-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+.video-meta small {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-4);
+}
+.video-meta span {
+  display: block;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.video-sub {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-4);
+}
+.video-raw {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.video-raw--err {
+  color: var(--error);
+  background: var(--err-tint, rgba(255, 103, 103, 0.12));
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.video-tl {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.video-tl li {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.video-tl time {
+  font-size: 11.5px;
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+}
+.video-tl__dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: var(--surface-3);
+}
+.video-tl li.ok { color: var(--fg-1); }
+.video-tl li.ok .video-tl__dot { background: var(--ok-tint, rgba(95, 217, 163, 0.12)); color: var(--success); }
+.video-tl li.cur { color: var(--fg-0); }
+.video-tl li.cur .video-tl__dot { background: rgba(var(--accent-rgb), 0.18); color: var(--accent-0); }
+.video-tl li.bad { color: var(--error); }
+.video-tl li.bad .video-tl__dot { background: var(--err-tint, rgba(255, 103, 103, 0.12)); color: var(--error); }
+
+/* canvas node chip */
+.video-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-soft, #ff9cc3);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* accounts card block */
+.video-acc {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.video-acc__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.video-acc__row span:first-child { color: var(--fg-3); }
+.video-acc__foot {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.video-acc__note {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+@media (max-width: 767px) {
+  .video-qrow.music-qhead { display: none; }
+  .video-qrow.music-qrow {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+  }
+  .video-qrow .music-col-xl,
+  .video-qrow .music-col-t { display: none; }
+}

@@ -13,6 +13,7 @@ import {
   IconSidebar,
   IconUser,
   IconUsers,
+  IconVideo,
 } from "../canvas/icons";
 
 // Magnific-style app sidebar: brand on top, primary destinations below
@@ -23,6 +24,7 @@ const ITEMS: Array<{ view: AppView; label: string; icon: ReactNode }> = [
   { view: "flows", label: "Flows", icon: <IconFrame size={15} /> },
   { view: "imagegen", label: "Image Gen", icon: <IconImage size={15} /> },
   { view: "music", label: "Flow Music", icon: <IconMusic size={15} /> },
+  { view: "video", label: "Flow Video", icon: <IconVideo size={15} /> },
   { view: "templates", label: "Thư viện mẫu", icon: <IconLayers size={15} /> },
   { view: "library", label: "Library", icon: <IconGridLayout size={15} /> },
   { view: "accounts", label: "Tài khoản", icon: <IconUser size={15} /> },

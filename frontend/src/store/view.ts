@@ -5,11 +5,12 @@ import { create } from "zustand";
 //   flows    — gallery of boards ("Spaces" page)
 //   imagegen — standalone single-image generator
 //   music    — Flow Music: compose songs, queue, personal library
+//   video    — Flow Video: Veo / Omni run inside the Flow tab (extension)
 //   library  — all generated/uploaded media
 //   accounts — Google Flow accounts (Chrome profiles) and auto switching
 //   templates — shared template library
 //   team     — admin: Flowboard user accounts
-export type AppView = "canvas" | "flows" | "imagegen" | "music" | "library" | "accounts" | "templates" | "team";
+export type AppView = "canvas" | "flows" | "imagegen" | "music" | "video" | "library" | "accounts" | "templates" | "team";
 
 interface ViewState {
   view: AppView;
