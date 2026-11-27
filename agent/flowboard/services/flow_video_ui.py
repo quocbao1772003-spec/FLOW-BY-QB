@@ -24,15 +24,20 @@ logger = logging.getLogger(__name__)
 
 STEPS: list[tuple[str, str]] = [
     ("open_tab", "Mở tab"),
+    ("manual_mode", "Chế độ tay"),
     ("upload", "Tải ảnh"),
-    ("ingredient", "Thêm vào prompt"),
+    ("ingredient", "Ảnh đầu"),
     ("submit", "Gửi"),
     ("approve", "Duyệt credit"),
     ("generating", "Đang tạo"),
     ("download", "Tải về"),
 ]
 STEP_KEYS = [k for k, _ in STEPS]
-CREDITS = {"veo_fast": 20, "veo_quality": 100}
+# Fallback only: the real cost is read from Flow ("Generating will use N credits").
+MODELS = ("veo_lite", "veo_lite_lowprio", "omni_flash", "veo_fast", "veo_quality")
+DEFAULT_MODEL = "veo_lite"
+DEPRECATED_MODELS = ("veo_fast", "veo_quality")  # "Leaving Dec 5"
+CREDITS = {"veo_lite": 10, "veo_lite_lowprio": 0, "omni_flash": 20, "veo_fast": 20, "veo_quality": 100}
 CHUNK_BYTES = 8 * 1024 * 1024
 JOB_TIMEOUT_S = 15 * 60
 
@@ -43,6 +48,7 @@ ERROR_MESSAGES = {
     "TIMEOUT": "Quá thời gian chờ Flow tạo hoặc tải video.",
     "DOWNLOAD_FAILED": "Tạo xong nhưng không tải được file video về.",
     "EXTENSION_OFFLINE": "Extension Flowboard chưa kết nối. Mở Chrome có extension và tab Flow.",
+    "OVER_BUDGET": "Chi phí credit Flow báo vượt mức tối đa cho phép của yêu cầu; chưa gửi.",
     "DEBUGGER_BUSY": "Tab Flow đang bị DevTools/extension khác gỡ lỗi. Đóng DevTools của tab đó rồi chạy lại.",
 }
 ERROR_CODES = set(ERROR_MESSAGES)
@@ -65,8 +71,32 @@ DEFAULT_SELECTORS: dict[str, Any] = {
     "no_credits_text": r"not enough credits|insufficient",
     "rejected_text": r"couldn.t generate|violat|policy",
     "credits_text": r"([\d,]+)\s*credits?",
-    "approve_timeout_s": 60,
+    "approve_timeout_s": 5,
     "generate_timeout_s": 480,
+    "flow_agent_text": "Flow Agent",
+    "settings_trigger": 'button[aria-label="Settings trigger"]',
+    "mode_video_text": "^Video$",
+    "video_type_frames_text": "^Frames$",
+    "video_type_ingredients_text": "^Ingredients$",
+    "aspect_text": {"16:9": "^16:9$|Landscape", "9:16": "^9:16$|Portrait"},
+    "model_text": {
+        "veo_lite": "Veo 3\.1 - Lite(?! \[)",
+        "veo_lite_lowprio": "Veo 3\.1 - Lite \[Lower Priority\]",
+        "omni_flash": "Omni 1\.2 Flash",
+        "veo_fast": "Veo 3\.1 - Fast",
+        "veo_quality": "Veo 3\.1 - Quality",
+    },
+    "model_scan_text": "Veo 3\.1 - [A-Za-z]+(?: \[[^\]]+\])?|Omni [\d.]+ Flash",
+    "leaving_text": "Leaving[^\n]*",
+    "resolution_text": "^{res}$",
+    "duration_text": "^{n}s?$",
+    "count_text": "^x?1$",
+    "start_frame_text": "^Start$",
+    "cost_text": "Generating will use (\d+) credits?",
+    "more_options": 'button[aria-label="More options"]',
+    "download_1080": "1080p Upscaled",
+    "download_720": "720p Original",
+    "download_menu_text": "^Download$",
 }
 
 def selectors_path() -> Path:
@@ -230,6 +260,7 @@ def accounts_snapshot(pool: Any) -> list[dict]:
             "email": key, "tab_open": row.get("tab_open"), "silent_on": row.get("silent_on"),
             "always_approve": row.get("always_approve"), "credits": row.get("credits"),
             "busy": is_busy(key), "checked_at": row.get("checked_at"),
+            "models": row.get("models") or [],
         })
     return sorted(out, key=lambda r: r["email"])
 
@@ -248,7 +279,8 @@ async def probe(pool: Any, account: Optional[str], *, call_factory=bridge_call) 
         raise map_extension_error(r)
     d = r.get("data") if isinstance(r.get("data"), dict) else r
     note_account(key, tab_open=d.get("tab_open"), silent_on=d.get("silent_on"),
-                 always_approve=d.get("always_approve"), credits=d.get("credits"))
+                 always_approve=d.get("always_approve"), credits=d.get("credits"),
+                 models=d.get("models") if isinstance(d.get("models"), list) else None)
     return {"account": key, **d}
 
 async def run_job(params: dict, pool: Any, out_path: Path, *,
@@ -264,14 +296,17 @@ async def run_job(params: dict, pool: Any, out_path: Path, *,
     key = pool.key_of(client)
     call_id = uuid.uuid4().hex
     state = CallState(call_id, out_path, on_step)
-    model = params.get("model") if params.get("model") in CREDITS else "veo_fast"
+    model = params.get("model") if params.get("model") in MODELS else DEFAULT_MODEL
     variants = max(1, int(params.get("variants") or 1))
-    credits = CREDITS[model] * variants
+    fallback_credits = CREDITS[model] * variants
     payload = {
         "call": call_id, "prompt": params["prompt"], "image": params.get("image"),
         "model": model, "aspect": params.get("aspect") or "16:9", "variants": variants,
         "silent": params.get("silent", True) is not False, "account": key,
         "name": params.get("name"), "selectors": load_selectors(), "chunk_bytes": CHUNK_BYTES,
+        "resolution": params.get("resolution"), "duration_s": params.get("duration_s"),
+        "ref_images": params.get("ref_images"), "max_credits": params.get("max_credits"),
+        "download_quality": params.get("download_quality") or "1080p",
     }
     async with lock_for(key):
         register_call(state)
@@ -303,10 +338,13 @@ async def run_job(params: dict, pool: Any, out_path: Path, *,
             if state.error or not out_path.is_file() or (expect and int(expect) != state.size):
                 return ({"account": key, "error_detail": state.error or f"size {state.size} != {expect}"},
                         "DOWNLOAD_FAILED")
+            real = r.get("cost") or data.get("cost")
+            credits = int(real) if isinstance(real, (int, float)) and real >= 0 else fallback_credits
             note_account(key, tab_open=True, silent_on=r.get("silent_on"),
                          always_approve=r.get("always_approve"), credits=r.get("credits_after"))
             return ({"account": key, "size": state.size,
                      "duration_s": r.get("duration_s") or data.get("duration_s"),
-                     "credits": credits, "file": out_path.name}, None)
+                     "credits": credits, "credits_real": isinstance(real, (int, float)),
+                     "file": out_path.name}, None)
         finally:
             unregister_call(call_id)

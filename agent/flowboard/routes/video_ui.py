@@ -34,8 +34,13 @@ class StartImage(BaseModel):
 class VideoGenerate(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
     start_image: StartImage
-    model: str = "veo_fast"
+    model: str = fv.DEFAULT_MODEL
     aspect: str = "16:9"
+    resolution: Optional[str] = None
+    duration_s: Optional[int] = Field(default=None, ge=4, le=10)
+    ref_images: Optional[list[StartImage]] = None
+    max_credits: Optional[int] = Field(default=None, ge=0)
+    download_quality: str = "1080p"
     variants: int = Field(default=1, ge=1, le=4)
     account: Optional[str] = None
     board_id: Optional[int] = None
@@ -72,9 +77,11 @@ def _view(req: Request) -> dict[str, Any]:
         "id": req.id, "status": status, "client_ref": p.get("client_ref"),
         "prompt": p.get("prompt"), "model": p.get("model"),
         "account": res.get("account"), "source": p.get("source") or "api",
-        "credits": res.get("credits") or fv.CREDITS.get(p.get("model") or "veo_fast", 20),
+        "credits": res.get("credits") or fv.CREDITS.get(p.get("model") or fv.DEFAULT_MODEL, 10),
         "created_at": _iso(req.created_at), "finished_at": _iso(req.finished_at),
         "step": max(done) if done else 0, "steps": steps, "error": err, "result": None,
+        "deprecated": (p.get("model") in fv.DEPRECATED_MODELS),
+        "resolution": p.get("resolution"), "duration_s": p.get("duration_s"),
     }
     if req.status == "done":
         out["result"] = {"media_url": f"/api/video-ui/requests/{req.id}/media",
@@ -97,6 +104,7 @@ def enqueue(body: VideoGenerate, source: str = "api") -> tuple[Request, bool]:
     uid = current_user_id.get()
     params = body.model_dump(exclude={"board_id", "node_id"})
     params["start_image"] = {**src, "name": body.start_image.name}
+    params["ref_images"] = [r.model_dump(exclude_none=True) for r in (body.ref_images or [])] or None
     params["source"] = source
     params["steps"] = blank_steps()
     if uid is not None:
@@ -123,8 +131,16 @@ def enqueue(body: VideoGenerate, source: str = "api") -> tuple[Request, bool]:
 
 @router.post("/generate", status_code=201)
 def generate(body: VideoGenerate):
-    if body.model not in fv.CREDITS:
-        raise HTTPException(422, "model must be veo_fast or veo_quality")
+    if body.model not in fv.MODELS:
+        raise HTTPException(422, "model must be one of " + ", ".join(fv.MODELS))
+    if body.resolution is not None:
+        allowed = ("360p", "720p") if body.model == "omni_flash" else ("720p", "1080p")
+        if body.resolution not in allowed:
+            raise HTTPException(422, f"resolution must be one of {allowed} for {body.model}")
+    if body.duration_s is not None and body.model != "omni_flash":
+        raise HTTPException(422, "duration_s is only for omni_flash")
+    if body.download_quality not in ("1080p", "720p"):
+        raise HTTPException(422, "download_quality must be 1080p or 720p")
     if body.aspect not in ("16:9", "9:16"):
         raise HTTPException(422, "aspect must be 16:9 or 9:16")
     req, dedup = enqueue(body, "board" if body.board_id or body.node_id else "api")

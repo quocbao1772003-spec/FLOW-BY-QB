@@ -900,7 +900,7 @@ async def generate_video(
         rtype = "gen_video_ui"
         params = {
             "prompt": prompt, "start_image": {"node_id": sources[0]["id"]},
-            "model": "veo_quality" if quality == "quality" else "veo_fast",
+            "model": {"quality": "veo_quality", "fast": "veo_fast", "lite_relaxed": "veo_lite_lowprio"}.get(quality, "veo_lite"),
             "aspect": "16:9" if aspect == VIDEO_ASPECTS["16:9"] else "9:16",
             "variants": 1, "source": "api",
             "client_ref": f"mcp:{target['id']}:{int(time.time())}",

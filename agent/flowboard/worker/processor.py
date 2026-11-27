@@ -952,6 +952,17 @@ async def _handle_gen_video_ui(params: dict) -> tuple[dict, Optional[str]]:
         image["name"] = flow_video_ui.safe_name(params.get("client_ref") or f"req{rid}") + ".png"
     job = dict(params)
     job["image"] = image
+    if params.get("ref_images"):
+        refs = []
+        for i, ri in enumerate(params["ref_images"]):
+            r = await _resolve_video_ui_image(ri or {})
+            if r is None:
+                return {"error_detail": f"ref image {i} not found"}, "UI_NOT_FOUND"
+            r.setdefault("name", None)
+            if not r.get("name"):
+                r["name"] = flow_video_ui.safe_name(params.get("client_ref") or f"req{rid}") + f"-ref{i + 1}.png"
+            refs.append(r)
+        job["ref_images"] = refs
     result, err = await flow_video_ui.run_job(
         job, account_pool, STORAGE_DIR / "video_ui" / f"{rid or 'adhoc'}.mp4",
         on_step=_video_ui_step_writer(rid), is_canceled=_music_canceled(rid),

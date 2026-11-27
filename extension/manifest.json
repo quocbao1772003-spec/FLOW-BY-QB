@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Flowboard Bridge",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Local bridge for Google Flow — runs batchexecute RPCs inside a signed-in flow.google.com tab and mints reCAPTCHA for Flowboard.",
   "permissions": [
     "storage",
@@ -9,7 +9,9 @@
     "tabs",
     "webRequest",
     "scripting",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "debugger",
+    "downloads"
   ],
   "host_permissions": [
     "https://flow.google.com/*",

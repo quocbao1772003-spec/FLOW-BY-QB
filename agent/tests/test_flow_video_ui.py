@@ -36,7 +36,7 @@ class FakePool:
     def pin(self, c):
         yield c
 
-def _fake_factory(mp4: bytes, steps=fv.STEP_KEYS, fail=None, split=3):
+def _fake_factory(mp4: bytes, steps=fv.STEP_KEYS, fail=None, split=3, cost=None):
     """call_factory whose call() emulates the extension: progress + chunks + reply."""
     seen = {}
 
@@ -45,7 +45,8 @@ def _fake_factory(mp4: bytes, steps=fv.STEP_KEYS, fail=None, split=3):
             seen["params"] = params
             cid = params.get("call")
             if params.get("probe"):
-                return {"ok": True, "tab_open": True, "silent_on": True, "always_approve": False, "credits": 980}
+                return {"ok": True, "tab_open": True, "silent_on": True, "always_approve": False, "credits": 980,
+                        "models": [{"label": "Veo 3.1 - Fast", "leaving": "Leaving Dec 5"}, {"label": "Veo 3.1 - Lite", "leaving": None}]}
             if cid is None:
                 return {"ok": True}
             for k in steps:
@@ -57,7 +58,10 @@ def _fake_factory(mp4: bytes, steps=fv.STEP_KEYS, fail=None, split=3):
             for i, part in enumerate(parts):
                 fv.on_chunk({"call": cid, "seq": i, "last": i == len(parts) - 1,
                              "b64": base64.b64encode(part).decode()})
-            return {"ok": True, "size": len(mp4), "duration_s": 8.0, "silent_on": True, "credits_after": 960}
+            out = {"ok": True, "size": len(mp4), "duration_s": 8.0, "silent_on": True, "credits_after": 960}
+            if cost is not None:
+                out["cost"] = cost
+            return out
         return call
     return factory, seen
 
@@ -73,12 +77,23 @@ def test_run_job_assembles_chunks_and_reports_steps(tmp_path):
     assert err is None
     assert out.read_bytes() == MP4
     assert steps == fv.STEP_KEYS
-    assert res["credits"] == 100 and res["size"] == len(MP4) and res["duration_s"] == 8.0
+    assert res["credits"] == 100 and res["credits_real"] is False and res["size"] == len(MP4) and res["duration_s"] == 8.0
     assert seen["params"]["selectors"]["prompt_box"].startswith("div.ProseMirror")
+
+def test_real_cost_overrides_fallback_and_steps_are_eight(tmp_path):
+    assert len(fv.STEP_KEYS) == 8 and fv.STEP_KEYS[1] == "manual_mode" and fv.DEFAULT_MODEL == "veo_lite"
+    factory, seen = _fake_factory(MP4, cost=7)
+    res, err = run(fv.run_job({"prompt": "p", "image": {}, "max_credits": 10, "resolution": "1080p",
+                               "ref_images": [{"b64": "x"}]}, FakePool(), tmp_path / "7.mp4",
+                              call_factory=factory, poll_s=0.01))
+    assert err is None and res["credits"] == 7 and res["credits_real"] is True
+    p = seen["params"]
+    assert p["model"] == "veo_lite" and p["max_credits"] == 10 and p["resolution"] == "1080p"
+    assert p["download_quality"] == "1080p" and p["ref_images"] == [{"b64": "x"}]
 
 @pytest.mark.parametrize("code,expect", [
     ("NO_CREDITS", "NO_CREDITS"), ("FLOW_REJECTED", "FLOW_REJECTED"), ("UI_NOT_FOUND", "UI_NOT_FOUND"),
-    ("TIMEOUT", "TIMEOUT"), ("DEBUGGER_BUSY", "DEBUGGER_BUSY"),
+    ("TIMEOUT", "TIMEOUT"), ("OVER_BUDGET", "OVER_BUDGET"), ("DEBUGGER_BUSY", "DEBUGGER_BUSY"),
     ("CDP attach: Another debugger is already attached", "DEBUGGER_BUSY"),
     ("weird", "UI_NOT_FOUND"), ("extension_disconnected", "EXTENSION_OFFLINE"),
 ])
@@ -140,6 +155,7 @@ def test_probe_updates_accounts(tmp_path):
     assert d["tab_open"] and d["credits"] == 980
     snap = fv.accounts_snapshot(pool)
     assert snap[0]["email"] == "a@x.com" and snap[0]["silent_on"] is True and snap[0]["credits"] == 980
+    assert snap[0]["models"][0]["leaving"] == "Leaving Dec 5"
 
 # ── REST ──────────────────────────────────────────────────────────────────
 @pytest.fixture
@@ -186,7 +202,7 @@ def test_view_steps_error_and_media(client, online):
     from flowboard.worker.processor import _video_ui_step_writer
     _video_ui_step_writer(rid)("approve", True)
     v = client.get(f"/api/video-ui/requests/{rid}").json()
-    assert v["step"] == 5 and all(s["ok"] for s in v["steps"][:5])
+    assert v["step"] == 6 and all(s["ok"] for s in v["steps"][:6])
     with get_session() as s:
         req = s.get(Request, rid)
         req.status, req.error = "failed", "NO_CREDITS"
@@ -210,6 +226,19 @@ def test_view_steps_error_and_media(client, online):
     assert m.headers["cache-control"] == "no-store"
     lst = client.get("/api/video-ui/requests?status=done").json()
     assert [i["id"] for i in lst["items"]] == [rid]
+
+def test_new_params_validation(client, online):
+    ok = client.post("/api/video-ui/generate", json={**BODY, "client_ref": "n1", "model": "omni_flash",
+                                                      "resolution": "360p", "duration_s": 6, "max_credits": 30})
+    assert ok.status_code == 201
+    for bad in ({"model": "nope"}, {"resolution": "1080p", "model": "omni_flash"}, {"duration_s": 6},
+                {"download_quality": "4k"}, {"duration_s": 99, "model": "omni_flash"}):
+        r = client.post("/api/video-ui/generate", json={**BODY, "client_ref": "bad", **bad})
+        assert r.status_code == 422, bad
+    v = client.get(f"/api/video-ui/requests/{ok.json()['request_id']}").json()
+    assert v["model"] == "omni_flash" and v["deprecated"] is False and len(v["steps"]) == 8
+    old = client.post("/api/video-ui/generate", json={**BODY, "client_ref": "n2", "model": "veo_fast"}).json()
+    assert client.get(f"/api/video-ui/requests/{old['request_id']}").json()["deprecated"] is True
 
 def test_cancel_endpoint(client, online):
     rid = client.post("/api/video-ui/generate", json=BODY).json()["request_id"]

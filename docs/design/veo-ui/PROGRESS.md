@@ -3,3 +3,4 @@
 - canvas-node: dang tao + xong, lint 0
 - noacc/empty: xong, lint 0. Chi dark; 390/1366/1920
 - 1 backend: flow_video_ui service/routes/processor/MCP flag/tests xong
+- 2 extension: video-ui.js + cdp-input.js, manifest 0.2.4, 8 buoc + settings/frames/cost/download quality, test xong; backend cap nhat contract 27/11
